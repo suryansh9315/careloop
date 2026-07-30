@@ -1,0 +1,35 @@
+{
+  "name": "careloop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "CareLoop — voice-first pre-visit clinical intake that charts live, drafts an n=1 coded CarePlan, peer-reviews it, and checks coverage. YC x Medplum Agentic Healthcare Hackathon.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "bridge": "tsx watch src/bridge/server.ts",
+    "seed": "tsx scripts/seed.ts",
+    "moss:index": "tsx scripts/moss-index.ts",
+    "simulate": "tsx scripts/simulate-call.ts",
+    "reset": "tsx scripts/reset-demo.ts",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.1",
+    "@deepgram/sdk": "^3.9.0",
+    "@medplum/core": "^4.1.0",
+    "@medplum/fhirtypes": "^4.1.0",
+    "@moss-dev/moss": "^1.4.1",
+    "dotenv": "^16.4.7",
+    "ws": "^8.18.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/ws": "^8.5.13",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
