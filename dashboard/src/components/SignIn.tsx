@@ -1,5 +1,11 @@
 import { useState } from 'react';
-import { MEDPLUM_BASE_URL, SSO_CONFIGURED, signInWithMedplum } from '../medplum';
+import {
+  MEDPLUM_BASE_URL,
+  MEDPLUM_CLIENT_ID,
+  MEDPLUM_REDIRECT_URI,
+  SSO_CONFIGURED,
+  signInWithMedplum,
+} from '../medplum';
 import { PulseIcon, ShieldIcon } from './icons';
 import { Button } from './ui';
 
@@ -73,6 +79,40 @@ export function SignIn({ error }: { error?: string | null }) {
               <ShieldIcon size={13} /> Your password is entered on {serverHost}, never in
               CareLoop.
             </p>
+
+            {/*
+             * "Invalid redirect URI" is rejected by Medplum *before* it redirects
+             * back, so the app never gets a callback it could explain. The only
+             * thing that helps is showing the exact values the server is
+             * comparing against, so whoever hits it can copy them straight into
+             * the ClientApplication instead of guessing.
+             */}
+            <details className="signin-diag">
+              <summary>Trouble signing in?</summary>
+              <p>
+                If Medplum answers <strong>&ldquo;Invalid redirect URI&rdquo;</strong>, this
+                exact value must be saved on the ClientApplication&rsquo;s{' '}
+                <code>Redirect URI</code> field — it is compared byte for byte, trailing
+                slash included:
+              </p>
+              <p className="signin-diag-value">
+                <code>{MEDPLUM_REDIRECT_URI}</code>
+              </p>
+              <dl className="signin-diag-list">
+                <dt>Server</dt>
+                <dd>
+                  <code>{MEDPLUM_BASE_URL}</code>
+                </dd>
+                <dt>Client ID</dt>
+                <dd>
+                  <code>{MEDPLUM_CLIENT_ID}</code>
+                </dd>
+              </dl>
+              <p className="hint">
+                Medplum stores a single redirect URI per client, so local and deployed
+                environments each need their own ClientApplication.
+              </p>
+            </details>
           </>
         ) : (
           <div className="alert error" role="alert">
