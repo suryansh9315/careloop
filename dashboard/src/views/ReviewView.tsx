@@ -3,11 +3,30 @@ import type { ApproveResult, PlanEdits, ReviewData, SaveResult } from '../useRev
 import type { DraftPlan, ExpertReview, MedOrder, ProtocolStep, SafetyFlag, RiskFinding } from '../types';
 import type { ChartLine } from '../types';
 import { usePatientNames } from '../usePatientNames';
-import { CheckCircleIcon, CheckIcon, ExternalIcon, PillIcon, BeakerIcon, ShieldIcon, PlusIcon, UsersIcon, PulseIcon } from '../components/icons';
+import {
+  CheckCircleIcon,
+  CheckIcon,
+  ExternalIcon,
+  PillIcon,
+  BeakerIcon,
+  ShieldIcon,
+  PlusIcon,
+  UsersIcon,
+  PulseIcon,
+  ListIcon,
+} from '../components/icons';
 import { Avatar, Button, Card, EmptyState, Pill, type Tone } from '../components/ui';
 import type { PatientContext } from '../types';
 import { RxNormSelect } from '../components/RxNormSelect';
-import { ScoreTrend } from '../components/ScoreTrend';
+import { ScoreTrendChart, BandMeter, DeltaBadge, SeverityBar, scaleForModule, type SeverityBarSegment } from '../components/charts';
+import {
+  instrumentMeta,
+  itemMeta,
+  itemSeverity,
+  itemSeverityLevel,
+  type InstrumentItemMeta,
+} from '../instrumentItems';
+import { BAND_LABEL, BAND_TONE, CONSENSUS_LABEL, INSTRUMENT_LABEL, trendPointsFromPlan } from '../clinicalDisplay';
 import { formatTime } from './format';
 
 const MED_ROLES: MedOrder['role'][] = ['controller', 'reliever', 'rescue', 'acute-course'];
@@ -27,42 +46,6 @@ function planMeds(plan: DraftPlan): MedOrder[] {
   }
   return [];
 }
-
-const BAND_LABEL: Record<string, string> = {
-  well: 'Well controlled',
-  partial: 'Not well controlled',
-  poor: 'Very poorly controlled',
-};
-
-/** Instrument name per condition module, for the score chip + hero. */
-const INSTRUMENT_LABEL: Record<string, string> = {
-  asthma: 'ACT',
-  depression: 'PHQ-9',
-};
-
-/** Trend chart scale/target per condition. */
-const TREND_CONFIG: Record<string, { min: number; max: number; threshold: number; higherIsBetter: boolean }> = {
-  asthma: { min: 5, max: 25, threshold: 20, higherIsBetter: true },
-  depression: { min: 0, max: 27, threshold: 10, higherIsBetter: false },
-};
-
-/** Tone by band severity (works across conditions). */
-const BAND_TONE: Record<string, Tone> = {
-  well: 'green',
-  minimal: 'green',
-  mild: 'green',
-  partial: 'amber',
-  moderate: 'amber',
-  poor: 'red',
-  'moderately-severe': 'red',
-  severe: 'red',
-};
-
-const CONSENSUS_LABEL: Record<string, string> = {
-  'approve-as-drafted': 'Approve as drafted',
-  'approve-with-notes': 'Approve with notes',
-  revise: 'Revise before approval',
-};
 
 /** Whole years between a YYYY-MM-DD DOB and today. */
 function ageFromDob(dob: string): number | null {
@@ -171,16 +154,8 @@ export function ReviewView({ data, onBack }: { data: ReviewData; onBack: () => v
   const instrument = INSTRUMENT_LABEL[draftPlan.conditionModuleId] ?? 'Score';
   const bandText = draftPlan.actResult.bandLabel ?? BAND_LABEL[band] ?? band;
   const bandTone: Tone = BAND_TONE[band] ?? 'gray';
-  const trendCfg = TREND_CONFIG[draftPlan.conditionModuleId] ?? {
-    min: 0,
-    max: 25,
-    threshold: 20,
-    higherIsBetter: true,
-  };
-  const trendPoints = [
-    ...patient.priorActScores.map((s) => ({ date: s.date, total: s.total })),
-    { date: 'today', total: draftPlan.actResult.total },
-  ];
+  const scale = scaleForModule(draftPlan.conditionModuleId);
+  const trendPoints = trendPointsFromPlan(patient, draftPlan);
 
   return (
     <div className="page">
@@ -207,6 +182,9 @@ export function ReviewView({ data, onBack }: { data: ReviewData; onBack: () => v
             <span className="score-num">{draftPlan.actResult.total}</span>
             {instrument} · {bandText}
           </span>
+          <div className="rv-hero-meter">
+            <BandMeter scale={scale} total={draftPlan.actResult.total} />
+          </div>
         </div>
       </div>
 
@@ -233,18 +211,12 @@ export function ReviewView({ data, onBack }: { data: ReviewData; onBack: () => v
           <PatientSnapshotCard patient={patient} />
           <Card
             title={`${instrument} trend`}
-            subtitle={`${trendPoints.length} check-ins · target ${trendCfg.threshold}`}
-            right={<ScoreDelta points={trendPoints} higherIsBetter={trendCfg.higherIsBetter} label={instrument} />}
+            subtitle={`${trendPoints.length} check-in${trendPoints.length === 1 ? '' : 's'} · target ${scale.target} (${scale.higherIsBetter ? '≥' : '≤'})`}
+            right={<DeltaBadge points={trendPoints} scale={scale} />}
           >
-            <ScoreTrend
-              points={trendPoints}
-              min={trendCfg.min}
-              max={trendCfg.max}
-              threshold={trendCfg.threshold}
-              higherIsBetter={trendCfg.higherIsBetter}
-              label={instrument}
-            />
+            <ScoreTrendChart points={trendPoints} scale={scale} />
           </Card>
+          <ItemBreakdownCard plan={draftPlan} />
           <RiskFactorsCard findings={draftPlan.riskFindings} />
           <SafetyFlagsCard flags={draftPlan.safetyFlags} />
           <DraftPlanCard
@@ -392,26 +364,127 @@ function SnapFact({ label, value, sub }: { label: string; value: string; sub?: s
   );
 }
 
-/** The net change over the visualized trend, shown as a signed delta chip. */
-function ScoreDelta({
-  points,
-  higherIsBetter,
-  label,
-}: {
-  points: { total: number }[];
-  higherIsBetter: boolean;
-  label: string;
-}) {
-  if (points.length < 2) return null;
-  const first = points[0].total;
-  const last = points[points.length - 1].total;
-  const delta = last - first;
-  if (delta === 0) return <span className="delta-chip flat">no change</span>;
-  const improving = higherIsBetter ? delta > 0 : delta < 0;
+// ── Item-level breakdown ─────────────────────────────────────────────────────
+
+type ItemRow = {
+  linkId: string;
+  value: number;
+  item: InstrumentItemMeta;
+  severity: number;
+  level: 'ok' | 'mild' | 'concern';
+  sentinelEndorsed: boolean;
+};
+
+/*
+ * Severity wording, not clinical judgement. "No concern" overstated the low
+ * bucket: a PHQ-9 response of 1 is "several days", which is subthreshold but
+ * not nothing, and labelling it away invites a reader to skip it. These read as
+ * points on a scale and leave the interpretation to the clinician.
+ */
+const LEVEL_LABEL: Record<ItemRow['level'], string> = {
+  ok: 'Low',
+  mild: 'Moderate',
+  concern: 'High',
+};
+
+const LEVEL_TONE: Record<ItemRow['level'], Tone> = {
+  ok: 'green',
+  mild: 'amber',
+  concern: 'red',
+};
+
+/**
+ * "Why is this score what it is?" — every instrument item as its own small
+ * response-scale bar, ordered worst-first. A sentinel item (PHQ-9 self-harm,
+ * item 9) that was endorsed is pinned above the rest and called out
+ * distinctly, regardless of where it would otherwise sort.
+ */
+function ItemBreakdownCard({ plan }: { plan: DraftPlan }) {
+  const meta = instrumentMeta(plan.conditionModuleId);
+  const answers = plan.actResult.answers ?? [];
+  if (!meta || answers.length === 0) return null;
+
+  const rows: ItemRow[] = answers
+    .map((a) => {
+      const item = itemMeta(plan.conditionModuleId, a.linkId);
+      if (!item) return null;
+      const severity = itemSeverity(item, a.value, meta.higherIsBetter);
+      const sentinelEndorsed = Boolean(item.sentinel) && a.value > item.min;
+      // A sentinel item (self-harm) that was endorsed escalates on its own,
+      // regardless of what the generic severity ramp says about this response.
+      const level = sentinelEndorsed ? 'concern' : itemSeverityLevel(item, a.value, meta.higherIsBetter);
+      return { linkId: a.linkId, value: a.value, item, severity, level, sentinelEndorsed };
+    })
+    .filter((r): r is ItemRow => r !== null)
+    .sort((a, b) => {
+      if (a.sentinelEndorsed !== b.sentinelEndorsed) return a.sentinelEndorsed ? -1 : 1;
+      return b.severity - a.severity;
+    });
+
+  if (rows.length === 0) return null;
+
+  const concernCount = rows.filter((r) => r.level === 'concern').length;
+  const sentinelRow = rows.find((r) => r.sentinelEndorsed);
+
   return (
-    <span className={`delta-chip ${improving ? 'up' : 'down'}`}>
-      {delta > 0 ? '▲' : '▼'} {Math.abs(delta)} {label}
-    </span>
+    <Card
+      icon={<ListIcon size={18} />}
+      title={`${meta.label} item breakdown`}
+      subtitle="Worst-scoring items first — what's driving the total"
+      right={
+        <span className="count-chip">
+          {sentinelRow ? 'self-harm flag' : concernCount > 0 ? `${concernCount} high concern` : `${rows.length} items`}
+        </span>
+      }
+    >
+      <div className="rv-item-list">
+        {rows.map((row) => (
+          <ItemBreakdownRow key={row.linkId} row={row} />
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+function ItemBreakdownRow({ row }: { row: ItemRow }) {
+  const [expanded, setExpanded] = useState(false);
+  const { item, value, level, sentinelEndorsed } = row;
+  const span = item.max - item.min || 1;
+  const pct = ((Math.max(item.min, Math.min(item.max, value)) - item.min) / span) * 100;
+
+  return (
+    <div
+      className={`rv-item-row level-${level} ${sentinelEndorsed ? 'sentinel' : ''}`}
+      tabIndex={0}
+      onMouseEnter={() => setExpanded(true)}
+      onMouseLeave={() => setExpanded(false)}
+      onFocus={() => setExpanded(true)}
+      onBlur={() => setExpanded(false)}
+    >
+      {sentinelEndorsed && (
+        <div className="rv-item-sentinel-banner">
+          <ShieldIcon size={14} />
+          Self-harm thoughts endorsed — review immediately
+        </div>
+      )}
+      <div className="rv-item-head">
+        <span className="rv-item-name">{item.short}</span>
+        <span className="rv-item-level">{LEVEL_LABEL[level]}</span>
+        <Pill tone={LEVEL_TONE[level]} className="rv-item-value">
+          {value} / {item.max}
+        </Pill>
+      </div>
+      <div className="rv-item-track" aria-hidden="true">
+        <div className={`rv-item-fill tone-${level}`} style={{ width: `${pct}%` }} />
+        <div className="rv-item-marker" style={{ left: `${pct}%` }} />
+      </div>
+      {expanded && (
+        <div className="rv-item-detail">
+          <p className="rv-item-prompt">{item.prompt}</p>
+          <p className="rv-item-scale">{item.scale}</p>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -692,30 +765,28 @@ function PeerReviewCard({
   const agree = review.reviews.filter((r) => r.verdict === 'agree').length;
   const concern = review.reviews.filter((r) => r.verdict === 'concern').length;
   const suggest = review.reviews.filter((r) => r.verdict === 'suggest-edit').length;
-  const total = review.reviews.length || 1;
   const consensusTone: Tone =
     review.consensus === 'approve-as-drafted' ? 'green' : review.consensus === 'revise' ? 'red' : 'amber';
+  const allSegments: SeverityBarSegment[] = [
+    { key: 'agree', label: 'Agree', count: agree, tone: 'green' },
+    { key: 'suggest', label: 'Suggest edit', count: suggest, tone: 'amber' },
+    { key: 'concern', label: 'Concern', count: concern, tone: 'red' },
+  ];
+  const segments = allSegments.filter((s) => s.count > 0);
   return (
     <Card
       title="Expert peer review"
       right={<span className="count-chip">{review.reviews.length} experts</span>}
     >
       <div className="consensus-summary">
-        <div className="consensus-bar">
-          {agree > 0 && <span className="seg green" style={{ flex: agree }} title={`${agree} agree`} />}
-          {suggest > 0 && <span className="seg amber" style={{ flex: suggest }} title={`${suggest} suggest edit`} />}
-          {concern > 0 && <span className="seg red" style={{ flex: concern }} title={`${concern} concern`} />}
-        </div>
-        <div className="consensus-legend">
-          <span><b>{agree}</b>/{total} agree</span>
-          {suggest > 0 && <span><b>{suggest}</b> suggest</span>}
-          {concern > 0 && <span><b>{concern}</b> concern</span>}
-        </div>
+        <SeverityBar segments={segments} total={review.reviews.length} />
         <Pill tone={consensusTone}>{CONSENSUS_LABEL[review.consensus] ?? review.consensus}</Pill>
       </div>
 
-      {review.reviews.map((r) => (
-        <ExpertRow key={r.expert} review={r} canApply={canApply} onApply={onApply} />
+      {review.reviews.map((r, i) => (
+        // Index-suffixed: the persona key *should* be unique per panel, but it
+        // arrives from generated plan data and a repeat silently drops a review.
+        <ExpertRow key={`${r.expert}-${i}`} review={r} canApply={canApply} onApply={onApply} />
       ))}
 
       {review.flagged.length > 0 && (
@@ -808,31 +879,42 @@ function ResearchCard({ plan }: { plan: DraftPlan }) {
 function CoverageCard({ plan }: { plan: DraftPlan }) {
   const c = plan.coverage;
   if (!c) return null;
+  const statusTone: Tone = !c.covered ? 'amber' : c.priorAuthRequired ? 'amber' : 'green';
+  const statusText = !c.covered ? 'Not on formulary' : c.priorAuthRequired ? 'Covered · prior auth needed' : 'Covered · no prior auth';
   return (
     <Card
       icon={<ShieldIcon size={18} />}
       title="Coverage & cost"
       right={<span className="count-chip">Stedi</span>}
     >
-      <div className="coverage-cost">
-        <span className="amt">${c.copayUsd}</span>
+      <div className="rv-coverage">
+        <div className="rv-coverage-stat">
+          <span className="rv-coverage-amt">${c.copayUsd}</span>
+          <span className="rv-coverage-amt-label">estimated out-of-pocket copay</span>
+        </div>
+        <div className={`rv-coverage-status tone-${statusTone}`}>
+          <span className="rv-coverage-status-dot" />
+          {statusText}
+        </div>
       </div>
-      <div className="hint">estimated out-of-pocket · {c.planName}</div>
-      <div className="coverage-flags">
-        <Pill tone={c.covered ? 'green' : 'amber'}>{c.covered ? 'On formulary' : 'Not covered'}</Pill>
-        {c.priorAuthRequired && <Pill tone="amber">Prior auth needed</Pill>}
-        <Pill tone="blue">Copay ${c.copayUsd}</Pill>
-      </div>
-      <div className="hint">{c.notes}</div>
+      <div className="hint">{c.planName}</div>
+      {c.notes && <div className="hint">{c.notes}</div>}
     </Card>
   );
 }
 
 // ── GINA future-risk findings ───────────────────────────────────────────────
 
+const SEVERITY_RANK: Record<'critical' | 'warning' | 'info', number> = { critical: 0, warning: 1, info: 2 };
+
+function bySeverity<T extends { severity: 'critical' | 'warning' | 'info' }>(items: T[]): T[] {
+  return [...items].sort((a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity]);
+}
+
 function RiskFactorsCard({ findings }: { findings?: RiskFinding[] }) {
   if (!findings || findings.length === 0) return null;
-  const criticalCount = findings.filter((f) => f.severity === 'critical').length;
+  const sorted = bySeverity(findings);
+  const criticalCount = sorted.filter((f) => f.severity === 'critical').length;
   return (
     <Card
       icon={<PulseIcon size={18} />}
@@ -840,13 +922,13 @@ function RiskFactorsCard({ findings }: { findings?: RiskFinding[] }) {
       subtitle="Beyond the ACT control score (GINA)"
       right={
         <span className="count-chip">
-          {criticalCount > 0 ? `${criticalCount} critical` : `${findings.length} flag(s)`}
+          {criticalCount > 0 ? `${criticalCount} critical` : `${sorted.length} flag(s)`}
         </span>
       }
     >
       <div className="safety-list">
-        {findings.map((f, i) => (
-          <div key={i} className={`safety-flag sev-${f.severity}`}>
+        {sorted.map((f, i) => (
+          <div key={i} className={`safety-flag sev-${f.severity} ${f.severity === 'critical' ? 'rv-flag-critical' : ''}`}>
             <Pill tone={SAFETY_TONE[f.severity]}>{f.severity}</Pill>
             <div className="safety-flag-body">
               <span className="safety-flag-kind">{f.label}</span>
@@ -877,20 +959,21 @@ function PatientRecapCard({ summary }: { summary?: string }) {
 
 function SafetyFlagsCard({ flags }: { flags?: SafetyFlag[] }) {
   if (!flags || flags.length === 0) return null;
-  const criticalCount = flags.filter((f) => f.severity === 'critical').length;
+  const sorted = bySeverity(flags);
+  const criticalCount = sorted.filter((f) => f.severity === 'critical').length;
   return (
     <Card
       icon={<ShieldIcon size={18} />}
       title="Safety review"
       right={
         <span className="count-chip">
-          {criticalCount > 0 ? `${criticalCount} critical` : `${flags.length} flag(s)`}
+          {criticalCount > 0 ? `${criticalCount} critical` : `${sorted.length} flag(s)`}
         </span>
       }
     >
       <div className="safety-list">
-        {flags.map((f, i) => (
-          <div key={i} className={`safety-flag sev-${f.severity}`}>
+        {sorted.map((f, i) => (
+          <div key={i} className={`safety-flag sev-${f.severity} ${f.severity === 'critical' ? 'rv-flag-critical' : ''}`}>
             <Pill tone={SAFETY_TONE[f.severity]}>{f.severity}</Pill>
             <div className="safety-flag-body">
               <span className="safety-flag-kind">{f.kind}</span>

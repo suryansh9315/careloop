@@ -1,14 +1,11 @@
 /**
- * Thin adapter kept for existing call sites (ReviewView.tsx): accepts the
- * legacy {points, min, max, threshold, higherIsBetter, label} shape and
- * renders the real chart in charts/ScoreTrendChart.tsx. Pass `scale` to use
- * a full ScaleSpec (with real band regions) instead of the synthesized
- * single-band fallback built from the legacy props.
+ * Thin adapter kept for existing call sites (ReviewQueueView.tsx): accepts
+ * the legacy {points, min, max, threshold, higherIsBetter, label, width?,
+ * height?} shape and renders the real chart in charts/ScoreSparkline.tsx.
+ * Pass `scale` to use a full ScaleSpec instead of the synthesized fallback.
  */
 import type { ScaleSpec } from './charts/scale';
-import { ScoreTrendChart, type TrendPoint } from './charts/ScoreTrendChart';
-
-export type { TrendPoint };
+import { ScoreSparkline as ChartSparkline } from './charts/ScoreSparkline';
 
 function synthesizeScale({
   min,
@@ -23,8 +20,6 @@ function synthesizeScale({
   higherIsBetter: boolean;
   label: string;
 }): ScaleSpec {
-  // No real band boundaries available from the legacy props — synthesize a
-  // two-band split at the threshold so shading still communicates direction.
   const goodTone = 'green' as const;
   const concernTone = 'red' as const;
   return {
@@ -47,23 +42,27 @@ function synthesizeScale({
   };
 }
 
-export function ScoreTrend({
+export function ScoreSparkline({
   points,
   min,
   max,
   threshold,
   higherIsBetter,
   label,
+  width = 200,
+  height = 52,
   scale,
 }: {
-  points: TrendPoint[];
+  points: { total: number }[];
   min: number;
   max: number;
   threshold: number;
   higherIsBetter: boolean;
   label: string;
+  width?: number;
+  height?: number;
   scale?: ScaleSpec;
 }) {
   const resolvedScale = scale ?? synthesizeScale({ min, max, threshold, higherIsBetter, label });
-  return <ScoreTrendChart points={points} scale={resolvedScale} />;
+  return <ChartSparkline points={points} scale={resolvedScale} width={width} height={height} />;
 }

@@ -1,0 +1,428 @@
+/**
+ * Styling for dashboard/src/components/charts/** (owned by Agent V).
+ * Every selector is scoped under a `.cl-*` root class so nothing here can
+ * leak into the rest of the app. Tokens only — no raw hex, except the new
+ * band/grid tokens defined below, which are documented in the shared brief.
+ */
+
+:root {
+  --grid: #eceef1;
+  --axis: #d8dbe0;
+  --band-good: #e7f7ee;
+  --band-good-ink: #137a45;
+  --band-warn: #fdf0e3;
+  --band-warn-ink: #a15c12;
+  --band-bad: #fdecec;
+  --band-bad-ink: #c0342e;
+}
+
+.cl-chart {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  font-family: var(--font);
+  color: var(--text);
+}
+
+.cl-chart * {
+  box-sizing: border-box;
+}
+
+.cl-num {
+  font-variant-numeric: tabular-nums;
+}
+
+.cl-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ── ChartFrame shell ───────────────────────────────────────────────────── */
+
+.cl-chart-frame {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.cl-chart-frame-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.cl-chart-frame-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.cl-chart-frame-sub {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.cl-chart-frame-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* ── ScoreTrendChart ────────────────────────────────────────────────────── */
+
+.cl-score-trend {
+  width: 100%;
+}
+
+.cl-chart-toprow {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 4px;
+}
+
+.cl-table-toggle {
+  font-family: var(--font);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-weak);
+  border: none;
+  border-radius: var(--r-pill);
+  padding: 4px 10px;
+  cursor: pointer;
+  min-height: 24px;
+  transition: background var(--ease) 0.15s;
+}
+
+.cl-table-toggle:hover {
+  background: var(--accent-weak);
+  filter: brightness(0.97);
+}
+
+.cl-table-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.cl-chart-svgwrap {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.cl-chart-svg {
+  display: block;
+  max-width: 100%;
+  outline: none;
+}
+
+.cl-chart-svg:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--r-sm);
+}
+
+.cl-chart-note {
+  text-align: center;
+  font-size: 11.5px;
+  color: var(--text-subtle);
+  margin-top: 4px;
+}
+
+/* ── Tooltip (shared: trend chart + severity bar segments) ─────────────── */
+
+.cl-tooltip {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  background: var(--text);
+  color: #fff;
+  border-radius: var(--r-sm);
+  padding: 6px 9px;
+  font-size: 11px;
+  line-height: 1.35;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: var(--shadow-md);
+  z-index: 5;
+}
+
+.cl-severity-tooltip {
+  left: 50%;
+  top: -6px;
+  pointer-events: none;
+}
+
+.cl-tooltip-value {
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+}
+
+.cl-tooltip-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: rgba(255, 255, 255, 0.78);
+  margin-top: 1px;
+}
+
+.cl-tooltip-key {
+  display: inline-block;
+  width: 8px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+
+/* ── Table view ──────────────────────────────────────────────────────────── */
+
+.cl-chart-table-wrap {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.cl-chart-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.cl-chart-table th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.cl-chart-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border-weak);
+  color: var(--text);
+}
+
+.cl-chart-table td.cl-num {
+  font-weight: 600;
+}
+
+.cl-band-key {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin-right: 6px;
+}
+
+/* ── Sparkline ───────────────────────────────────────────────────────────── */
+
+.cl-sparkline {
+  display: block;
+  max-width: 100%;
+}
+
+/* ── BandMeter ───────────────────────────────────────────────────────────── */
+
+.cl-band-meter {
+  width: 100%;
+}
+
+.cl-band-meter-track {
+  position: relative;
+  display: flex;
+  width: 100%;
+  height: 14px;
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  gap: 2px;
+  background: var(--surface);
+}
+
+.cl-band-meter-seg {
+  height: 100%;
+  min-width: 2px;
+}
+
+.cl-band-meter-marker {
+  position: absolute;
+  top: -3px;
+  width: 3px;
+  height: 20px;
+  background: var(--text);
+  border-radius: var(--r-pill);
+  transform: translateX(-50%);
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
+.cl-band-meter-ticks {
+  position: relative;
+  height: 12px;
+  margin-top: 2px;
+}
+
+.cl-band-meter-tick {
+  position: absolute;
+  transform: translateX(-50%);
+  font-size: 9px;
+  color: var(--text-subtle);
+  font-variant-numeric: tabular-nums;
+}
+
+.cl-band-meter-foot {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-subtle);
+}
+
+.cl-band-meter-current {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.cl-band-meter-current strong {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.cl-band-meter-label {
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+/* ── DeltaBadge ──────────────────────────────────────────────────────────── */
+
+.cl-delta-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: var(--r-pill);
+  white-space: nowrap;
+}
+
+.cl-delta-badge.tone-green {
+  background: var(--band-good);
+  color: var(--band-good-ink);
+}
+
+.cl-delta-badge.tone-red {
+  background: var(--band-bad);
+  color: var(--band-bad-ink);
+}
+
+.cl-delta-badge.tone-gray {
+  background: var(--gray-bg);
+  color: var(--gray-fg);
+}
+
+.cl-delta-arrow {
+  font-weight: 700;
+}
+
+.cl-delta-flag {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  opacity: 0.85;
+}
+
+/* ── SeverityBar ─────────────────────────────────────────────────────────── */
+
+.cl-severity-bar {
+  width: 100%;
+}
+
+.cl-severity-track {
+  display: flex;
+  width: 100%;
+  height: 20px;
+  border-radius: var(--r-sm);
+  overflow: visible;
+  gap: 2px;
+}
+
+.cl-severity-seg {
+  position: relative;
+  height: 100%;
+  min-width: 4px;
+  cursor: default;
+  transition: filter var(--ease) 0.15s;
+}
+
+.cl-severity-seg:first-child {
+  border-top-left-radius: var(--r-sm);
+  border-bottom-left-radius: var(--r-sm);
+}
+
+.cl-severity-seg:last-child {
+  border-top-right-radius: var(--r-sm);
+  border-bottom-right-radius: var(--r-sm);
+}
+
+.cl-severity-seg:hover,
+.cl-severity-seg.active,
+.cl-severity-seg:focus-visible {
+  filter: brightness(1.08);
+  outline: none;
+}
+
+.cl-severity-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.cl-severity-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.cl-severity-key {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.cl-severity-count {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cl-chart *,
+  .cl-table-toggle,
+  .cl-severity-seg {
+    transition: none !important;
+  }
+}
