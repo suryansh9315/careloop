@@ -1,4 +1,4 @@
-import { medplum } from '../medplum';
+import { signOut } from '../medplum';
 import {
   ClipboardIcon,
   HomeIcon,
@@ -90,7 +90,8 @@ export function Sidebar({
             className="icon-btn"
             title="Sign out"
             aria-label="Sign out"
-            onClick={() => void medplum.signOut()}
+            // Ends the SSO session too, not just the local one — see signOut().
+            onClick={() => void signOut()}
           >
             <LogoutIcon size={16} />
           </button>
