@@ -1,0 +1,57 @@
+name: Deploy bridge to AWS
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: careloop-bridge-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Redeploy EC2 bridge
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Configure AWS credentials with GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::006215409341:role/CareloopGitHubDeployRole
+          aws-region: us-east-1
+
+      - name: Redeploy bridge from main
+        shell: bash
+        run: |
+          set -euo pipefail
+          instance_id=$(aws ec2 describe-instances \
+            --filters Name=tag:Name,Values=careloop-bridge Name=instance-state-name,Values=running \
+            --query 'Reservations[0].Instances[0].InstanceId' \
+            --output text)
+          command_id=$(aws ssm send-command \
+            --document-name AWS-RunShellScript \
+            --targets 'Key=tag:Name,Values=careloop-bridge' \
+            --parameters 'commands=["cd /opt/careloop && git pull --ff-only origin main && npm ci && npm run build && systemctl restart careloop-bridge"]' \
+            --query Command.CommandId \
+            --output text)
+
+          for attempt in {1..30}; do
+            status=$(aws ssm get-command-invocation \
+              --command-id "$command_id" \
+              --instance-id "$instance_id" \
+              --query Status \
+              --output text 2>/dev/null || echo Pending)
+            case "$status" in
+              Success) exit 0 ;;
+              Failed|Cancelled|TimedOut) echo "SSM deployment failed: $status"; exit 1 ;;
+            esac
+            sleep 10
+          done
+          echo 'SSM deployment timed out'
+          exit 1

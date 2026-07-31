@@ -36,7 +36,8 @@ subnet, DNS, and a public Git clone are prerequisites.
 - The AWS Session Manager plugin is installed locally for interactive SSM
   sessions. AWS CLI `send-command` does not require this plugin.
 - The project is pushed to a Git repository reachable by the EC2 instance.
-- A real DNS name is available; use a Cloudflare DNS-only (grey-cloud) A record.
+- A real DNS name is available; create an A record in the authoritative Hostinger
+  DNS zone.
 - `terraform.tfvars` contains the real `domain` and `git_repo` values. Do not
   commit this file if the repository URL contains a token.
 - The application's `.env` contains `PORT=3000`,
@@ -135,13 +136,12 @@ sudo journalctl -u caddy -n 100 --no-pager
 
 ## DNS and Twilio
 
-After apply, create this Cloudflare record:
+After apply, create this Hostinger DNS record:
 
 ```text
 Type: A
-Name: <your domain>
-Target: terraform output -raw public_ip
-Proxy: DNS only / grey cloud
+Host: bridge
+Points to: terraform output -raw public_ip
 ```
 
 Wait for DNS to resolve and for Caddy to obtain its Let's Encrypt certificate.
@@ -158,6 +158,55 @@ Verify the bridge:
 ```bash
 curl -i "https://<your domain>/"
 curl -i "https://<your domain>/conditions"
+```
+
+For dashboard-triggered outbound calls, add these secrets to the root `.env`
+before uploading it to SSM:
+
+```text
+TWILIO_ACCOUNT_SID=AC...
+TWILIO_AUTH_TOKEN=...
+TWILIO_PHONE_NUMBER=+1...
+```
+
+In the Twilio Console, purchase or select a Voice-capable number. Under the
+number's **Voice Configuration**, set **A call comes in** to the same
+`https://<your domain>/voice` URL using `HTTP POST`. Trial accounts can call
+only verified destination numbers.
+
+## Dashboard (separate, static)
+
+Use Vercel so every Git push can automatically create a deployment. Import the
+repository in Vercel and set:
+
+```text
+Root directory: dashboard
+Framework: Vite
+Build command: npm run build
+Output directory: dist
+```
+
+Add these Production environment variables in Vercel:
+
+```text
+VITE_MEDPLUM_BASE_URL=https://api.medplum.com/
+VITE_MEDPLUM_CLIENT_ID=<your Medplum client ID>
+VITE_MEDPLUM_PROJECT_ID=<your Medplum project ID>
+VITE_PATIENT_ID=<your patient ID>
+VITE_BRIDGE_URL=https://bridge.2careaihealth.com
+```
+
+Add the custom domain `app.2careaihealth.com` in Vercel. Vercel will show the
+exact DNS record to add in Hostinger. The dashboard requires a Medplum user
+login; never put passwords, auth tokens, or API secrets in frontend variables
+because Vite compiles `VITE_*` values into browser JavaScript.
+
+For an AWS-native alternative, host the same `dist/` contents on S3 + CloudFront:
+
+```bash
+cd dashboard
+VITE_BRIDGE_URL=https://bridge.2careaihealth.com npm run build
+aws s3 sync dist/ s3://<your-bucket> --delete
 ```
 
 ## Redeploy and operate
