@@ -13,6 +13,7 @@
     "moss:index": "tsx scripts/moss-index.ts",
     "simulate": "tsx scripts/simulate-call.ts",
     "reset": "tsx scripts/reset-demo.ts",
+    "seed:conditions": "tsx scripts/seed-conditions.ts",
     "typecheck": "tsc --noEmit",
     "build": "tsc -p tsconfig.json"
   },

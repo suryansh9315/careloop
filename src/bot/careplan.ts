@@ -41,6 +41,7 @@ export function buildActObservations(
   actResult: ActResult,
 ): Observation[] {
   const subject = { reference: `Patient/${patientId}` };
+  const effectiveDateTime = new Date().toISOString(); // finalized-at — dates the score for future trends
   const byId = new Map(actResult.answers.map((a) => [a.linkId, a.value]));
 
   const items: Observation[] = module.instrument.items
@@ -53,6 +54,7 @@ export function buildActObservations(
         text: item.prompt,
       },
       subject,
+      effectiveDateTime,
       valueInteger: byId.get(item.linkId) ?? 0,
     } satisfies Observation));
 
@@ -66,6 +68,7 @@ export function buildActObservations(
       text: `${module.instrument.name} total score`,
     },
     subject,
+    effectiveDateTime,
     valueInteger: actResult.total,
   };
 

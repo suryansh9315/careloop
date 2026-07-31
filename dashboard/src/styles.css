@@ -1441,6 +1441,10 @@ select.field-input {
 .obs-list {
   display: flex;
   flex-direction: column;
+  /* Match the charting feed so the two Live columns cap + scroll at the same
+     height instead of the observations column growing unbounded. */
+  max-height: 440px;
+  overflow-y: auto;
 }
 .obs-row {
   display: flex;

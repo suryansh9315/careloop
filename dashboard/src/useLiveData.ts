@@ -67,7 +67,7 @@ function observationToRow(o: Observation): LiveObservation {
   };
 }
 
-export function useLiveData(patientId: string | null): LiveData {
+export function useLiveData(patientId: string | null, since?: string): LiveData {
   const medplum = useMedplum();
   const [lines, setLines] = useState<ChartLine[]>([]);
   const [observations, setObservations] = useState<LiveObservation[]>([]);
@@ -88,60 +88,78 @@ export function useLiveData(patientId: string | null): LiveData {
 
     let cancelled = false;
 
-    // 1. Human-readable charting feed (excluding artifact + call-log noise).
-    medplum
-      .searchResources('Communication', {
-        subject: `Patient/${patientId}`,
-        _sort: '-sent',
-        _count: 50,
-      })
-      .then((results) => {
-        if (cancelled) return;
-        const mapped = results.filter((c) => !isFeedNoise(c)).map(communicationToChartLine);
-        mapped.forEach((m) => seenComm.current.add(m.id));
-        setLines(mapped);
-      })
-      .catch(() => {
-        /* ignore — no feed yet */
-      });
+    const load = () => {
+      // 1. Human-readable charting feed (excluding artifact + call-log noise).
+      // Sort by _lastUpdated (always server-set) — NOT `sent`/`date`, which can be
+      // absent on some rows and let undated history saturate the _count window,
+      // pushing the just-written live rows out of the result set.
+      medplum
+        .searchResources('Communication', {
+          subject: `Patient/${patientId}`,
+          _sort: '-_lastUpdated',
+          _count: 50,
+        })
+        .then((results) => {
+          if (cancelled) return;
+          const mapped = results
+            .filter((c) => !isFeedNoise(c))
+            .map(communicationToChartLine)
+            .filter((m) => !since || m.at >= since);
+          mapped.forEach((m) => seenComm.current.add(m.id));
+          setLines(mapped);
+        })
+        .catch(() => {
+          /* ignore — no feed yet */
+        });
 
-    // 2. Coded preliminary Observations.
-    medplum
-      .searchResources('Observation', {
-        subject: `Patient/${patientId}`,
-        _sort: '-date',
-        _count: 50,
-      })
-      .then((results) => {
-        if (cancelled) return;
-        const mapped = results.map(observationToRow);
-        mapped.forEach((m) => seenObs.current.add(m.id));
-        setObservations(mapped);
-      })
-      .catch(() => {
-        /* ignore — no observations yet */
-      });
+      // 2. Coded preliminary Observations. Sort by _lastUpdated (see above) so the
+      // live-charted observations always surface, regardless of effectiveDateTime.
+      medplum
+        .searchResources('Observation', {
+          subject: `Patient/${patientId}`,
+          _sort: '-_lastUpdated',
+          _count: 50,
+        })
+        .then((results) => {
+          if (cancelled) return;
+          const mapped = results.map(observationToRow).filter((m) => !since || m.at >= since);
+          mapped.forEach((m) => seenObs.current.add(m.id));
+          setObservations(mapped);
+        })
+        .catch(() => {
+          /* ignore — no observations yet */
+        });
+    };
 
+    void load();
+    // Poll fast during the call so charted rows appear near-real-time even when
+    // Medplum WebSocket subscriptions aren't enabled (useSubscription is a bonus).
+    const timer = window.setInterval(load, 2000);
     return () => {
       cancelled = true;
+      window.clearInterval(timer);
     };
-  }, [medplum, patientId]);
+  }, [medplum, patientId, since]);
 
   // Live subscriptions — prepend new resources as they arrive (dedupe by id).
   useSubscription(commCriteria, (bundle) => {
     const entry = bundle.entry?.find((e) => e.resource?.resourceType === 'Communication');
     const resource = entry?.resource as Communication | undefined;
     if (!resource?.id || seenComm.current.has(resource.id) || isFeedNoise(resource)) return;
+    const line = communicationToChartLine(resource);
+    if (since && line.at < since) return;
     seenComm.current.add(resource.id);
-    setLines((prev) => [communicationToChartLine(resource), ...prev]);
+    setLines((prev) => [line, ...prev]);
   });
 
   useSubscription(obsCriteria, (bundle) => {
     const entry = bundle.entry?.find((e) => e.resource?.resourceType === 'Observation');
     const resource = entry?.resource as Observation | undefined;
     if (!resource?.id || seenObs.current.has(resource.id)) return;
+    const row = observationToRow(resource);
+    if (since && row.at < since) return;
     seenObs.current.add(resource.id);
-    setObservations((prev) => [observationToRow(resource), ...prev]);
+    setObservations((prev) => [row, ...prev]);
   });
 
   return { chartLines: lines, observations };

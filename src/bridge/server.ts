@@ -17,6 +17,7 @@ import {
 import { upsertConditionResource, validateModule } from '../conditions/store.js';
 import type { ConditionModule } from '../conditions/types.js';
 import {
+  buildQuestionnaireResponse,
   defaultToolDeps,
   newSession,
   runTool,
@@ -51,10 +52,42 @@ import { getCoverageClient } from '../integrations/stedi.js';
  */
 async function processSubmission(session: CallSession): Promise<void> {
   try {
-    if (!medplumEnabled() || !session.questionnaireResponse) return;
+    if (!medplumEnabled()) return;
     const patient = session.patient;
     const module = getModuleForPatient(patient);
+
+    // Only build a plan from a COMPLETE interview — regardless of whether the
+    // agent called submitQuestionnaire. The score comes from the in-memory
+    // session (what chartLive captured), NOT from the QR the agent submitted:
+    // in prompt mode the agent sometimes narrates answers ("I'll note that…")
+    // without ever calling chartLive, which would submit an EMPTY questionnaire
+    // and mis-score everything to 0 → a bogus "poor" plan. Guarding on the
+    // captured answers prevents that.
+    const complete = module.instrument.items.every((it) => session.answers.has(it.linkId));
+    if (!complete) {
+      log.info('postcall.incomplete', {
+        patientId: patient.patientId,
+        answered: session.answers.size,
+        needed: module.instrument.items.length,
+      });
+      return;
+    }
+
     const medplum = await getMedplum();
+
+    // Ensure a well-formed QR exists (rebuild from the session if the agent never
+    // submitted, or submitted an empty one).
+    if (!session.questionnaireResponse || (session.questionnaireResponse.item?.length ?? 0) === 0) {
+      const qr = buildQuestionnaireResponse(session);
+      session.questionnaireResponse = qr;
+      session.submitted = true;
+      log.info('postcall.salvaged', { patientId: patient.patientId, answered: session.answers.size });
+      try {
+        await medplum.createResource(qr);
+      } catch (err) {
+        log.warn('postcall.salvage_persist_failed', { error: err instanceof Error ? err.message : String(err) });
+      }
+    }
     const findPrior = async (patientId: string): Promise<string | null> => {
       const cp = await medplum.searchOne('CarePlan', {
         subject: `Patient/${patientId}`,
@@ -264,6 +297,40 @@ wss.on('connection', (twilioWs: WebSocket) => {
   let callStartMs = 0;
   let finalized = false;
   let processed = false;
+  // Call ending (industry-standard pattern): the agent calls the `endCall` tool
+  // when the conversation is truly done (after goodbye, no more questions). Only
+  // THEN do we drain the final goodbye audio and hang up — estimated from the
+  // μ-law bytes streamed to Twilio (8kHz = 8000 bytes/sec), since Deepgram's
+  // AgentAudioDone fires before the audio has actually played. No countdown runs
+  // before endCall, so the patient can ask anything after the recap. A long
+  // safety fallback (armed at submit) still ends the call if endCall never comes.
+  let awaitingHangup = false;
+  let hangupTimer: ReturnType<typeof setTimeout> | undefined;
+  let firstAudioMs = 0;
+  let audioBytesSinceEnd = 0;
+  const MULAW_BYTES_PER_SEC = 8000;
+  const HANGUP_TAIL_MS = 3000; // let the goodbye audio finish playing
+  const ENDCALL_MAX_MS = 12000; // ceiling after endCall
+  const SUBMIT_SAFETY_MS = 120000; // absolute safety if the agent never ends
+  const scheduleDrainHangup = () => {
+    if (!awaitingHangup) return;
+    const now = Date.now();
+    const playbackEndMs = (firstAudioMs || now) + (audioBytesSinceEnd / MULAW_BYTES_PER_SEC) * 1000;
+    const fireInMs = Math.min(Math.max(playbackEndMs + HANGUP_TAIL_MS - now, 1500), ENDCALL_MAX_MS);
+    if (hangupTimer) clearTimeout(hangupTimer);
+    hangupTimer = setTimeout(hangUp, fireInMs);
+  };
+  const armSafetyHangup = () => {
+    if (awaitingHangup) return; // an active drain takes precedence
+    if (hangupTimer) clearTimeout(hangupTimer);
+    hangupTimer = setTimeout(hangUp, SUBMIT_SAFETY_MS);
+  };
+  const endCallDrain = () => {
+    awaitingHangup = true;
+    firstAudioMs = 0;
+    audioBytesSinceEnd = 0;
+    scheduleDrainHangup();
+  };
 
   const sendToTwilio = (mulaw: Buffer) => {
     if (!streamSid) return;
@@ -278,8 +345,9 @@ wss.on('connection', (twilioWs: WebSocket) => {
     const durationSeconds = callStartMs ? Math.round((Date.now() - callStartMs) / 1000) : undefined;
     void updateCall(activeCallSid, { status: 'completed', endedAt: new Date().toISOString(), durationSeconds });
     // Build the plan on ANY terminal path (graceful hangup OR the patient hanging
-    // up) as long as they got far enough to submit. Idempotent via `processed`.
-    if (!processed && session?.questionnaireResponse) {
+    // up). processSubmission salvages a completed-but-unsubmitted interview and
+    // no-ops when too little was captured. Idempotent via `processed`.
+    if (!processed && session && (session.questionnaireResponse || session.answers.size > 0)) {
       processed = true;
       void processSubmission(session);
     }
@@ -337,10 +405,23 @@ wss.on('connection', (twilioWs: WebSocket) => {
       greeting: `Hi ${patient.givenName}, this is Maya from the clinic.`,
       callbacks: {
         onReady: () => log.info('deepgram.ready', { callSid }),
-        onAudio: (mulaw) => sendToTwilio(mulaw),
+        onAudio: (mulaw) => {
+          sendToTwilio(mulaw);
+          if (awaitingHangup) {
+            if (!firstAudioMs) firstAudioMs = Date.now();
+            audioBytesSinceEnd += mulaw.length;
+            scheduleDrainHangup(); // hang up once the goodbye audio finishes playing
+          }
+        },
         onUserText: (t) => {
           clearTwilio(); // barge-in
           log.info('call.user', { t });
+          // Patient spoke after the agent tried to end — they have more to say, so
+          // cancel the drain and let the agent respond (it will endCall again).
+          if (awaitingHangup) {
+            awaitingHangup = false;
+            armSafetyHangup();
+          }
           if (mode === 'state' && sm && CONVERSATION_ADVANCE_NODES.has(sm.currentNodeId)) {
             advance();
           }
@@ -351,9 +432,14 @@ wss.on('connection', (twilioWs: WebSocket) => {
           const result = await runTool(fc.name as ToolName, fc.arguments ?? {}, session, deps, fc.id);
           agent.sendFunctionResult(fc.id, fc.name, result);
           if (result.data?.submitted) {
-            // Just end the call after the closing; the heavy pipeline runs at
-            // hangUp() so nothing post-call overlaps the live conversation.
-            setTimeout(hangUp, 10000);
+            // Arm only a long safety net — the call ends when the agent calls
+            // endCall, not on a timer, so the recap + any questions run freely.
+            armSafetyHangup();
+          }
+          if (result.data?.endCall) {
+            // Agent signalled the conversation is done — drain the goodbye audio.
+            log.info('call.endcall', { callSid });
+            endCallDrain();
           }
           if (mode === 'state' && sm) {
             const charted = result.data?.charted;

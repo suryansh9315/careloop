@@ -82,25 +82,34 @@ export function useCalls(): CallsState {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    medplum
-      .searchResources('Communication', {
-        category: CALL_CATEGORY,
-        _sort: '-sent',
-        _count: 50,
-      })
-      .then((results) => {
-        if (cancelled) return;
-        setRows(results.map(toRow));
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return;
-        setError(err instanceof Error ? err.message : String(err));
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+
+    const load = () =>
+      medplum
+        .searchResources('Communication', {
+          category: CALL_CATEGORY,
+          _sort: '-sent',
+          _count: 50,
+        })
+        .then((results) => {
+          if (cancelled) return;
+          setRows(results.map(toRow));
+          setError(null);
+        })
+        .catch((err: unknown) => {
+          if (cancelled) return;
+          setError(err instanceof Error ? err.message : String(err));
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false);
+        });
+
+    void load();
+    // Poll fast so an in-progress call (and its status changes) is picked up
+    // quickly — the call log is written by the bridge, which we can't see push.
+    const timer = window.setInterval(load, 2000);
     return () => {
       cancelled = true;
+      window.clearInterval(timer);
     };
   }, [medplum, nonce]);
 

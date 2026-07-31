@@ -165,7 +165,7 @@ export type ProtocolStep = {
 // Flow spec (2care-style conversation graph)
 // ────────────────────────────────────────────────────────────────────────────
 
-export type ToolName = 'getCareContext' | 'chartLive' | 'submitQuestionnaire' | 'checkCoverage';
+export type ToolName = 'getCareContext' | 'chartLive' | 'submitQuestionnaire' | 'checkCoverage' | 'endCall';
 
 export type NodeType = 'conversation' | 'subagent' | 'end';
 

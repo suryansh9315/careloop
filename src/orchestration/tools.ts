@@ -68,20 +68,20 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
   {
     name: 'getCareContext',
     description:
-      'Fetch a grounded, patient-safe answer to a question the patient asks (e.g. inhaler technique). Returns a snippet to relay in 1–2 sentences.',
+      "Answer a CLINICAL or educational question about the patient's condition, symptoms, medication, or self-care (e.g. 'how do I use my inhaler?', 'what is a good ACT score?'). Do NOT use for insurance, coverage, plan, or cost questions — use checkCoverage for those. Returns a snippet to relay in 1–2 sentences.",
     parameters: {
       type: 'object',
-      properties: { question: { type: 'string', description: "the patient's question" } },
+      properties: { question: { type: 'string', description: "the patient's clinical/education question" } },
       required: ['question'],
     },
   },
   {
     name: 'checkCoverage',
     description:
-      "Answer an insurance/cost question (e.g. 'will this be covered?', 'what's my copay?', 'do I need prior authorization?'). Runs a real eligibility check on the patient's insurance and returns a patient-friendly summary to relay.",
+      "Answer ANY insurance, coverage, plan, or cost question — e.g. 'what insurance do I have?', 'what's my plan?', 'am I covered?', 'will this be covered?', 'what's my copay?', 'do I need prior authorization?'. Runs a real eligibility check on the patient's insurance and returns a patient-friendly summary (plan name, active status, copay, prior-auth) to relay.",
     parameters: {
       type: 'object',
-      properties: { question: { type: 'string', description: "the patient's insurance/cost question" } },
+      properties: { question: { type: 'string', description: "the patient's insurance/coverage/cost question" } },
       required: [],
     },
   },
@@ -89,6 +89,12 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
     name: 'submitQuestionnaire',
     description:
       'Finalize the check-in: sends the collected ACT answers and any concerns. Call once, silently, near the end.',
+    parameters: { type: 'object', properties: {}, required: [] },
+  },
+  {
+    name: 'endCall',
+    description:
+      'End the phone call. Call this ONLY after you have said your final goodbye AND the patient has no more questions. Do not announce it. This hangs up the line.',
     parameters: { type: 'object', properties: {}, required: [] },
   },
 ];
@@ -276,6 +282,12 @@ export async function runTool(
             priorAuthRequired: result.priorAuthRequired,
           },
         };
+      }
+
+      case 'endCall': {
+        // The agent signals the conversation is complete; the bridge drains the
+        // final goodbye audio and hangs up. No state change here.
+        return { ok: true, data: { endCall: true } };
       }
 
       case 'submitQuestionnaire': {

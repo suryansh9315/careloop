@@ -131,9 +131,9 @@ export const ASTHMA: ConditionModule = {
     },
     {
       id: 'reliever',
-      prompt: 'How often do you reach for your quick-relief (rescue) inhaler — and roughly how long does one canister last you?',
+      prompt: 'Roughly how long does one quick-relief (rescue) inhaler canister usually last you these days?',
       encoding:
-        '0 = rarely / one canister lasts several months; 1 = about one canister a month, or using it most days; 2 = more than one canister a month, or several times a day.',
+        '0 = several months or longer; 1 = about a month; 2 = less than a month (goes through more than one canister a month).',
     },
   ],
 

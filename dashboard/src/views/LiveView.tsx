@@ -19,10 +19,17 @@ import {
 import { Avatar, Button, Card, EmptyState, PageHeader, Pill } from '../components/ui';
 import { formatTime, formatRelative } from './format';
 
-/** The most recent call row that is currently in progress, if any. */
+/**
+ * The call to focus the Live view on: an in-progress call if there is one, else
+ * the most recent call within the last 30 min — so its charting stays visible
+ * right after it ends instead of the page going blank.
+ */
 function findActiveCall(rows: CallRow[]): CallRow | null {
-  for (const r of rows) {
-    if (r.status === 'in-progress') return r;
+  const inProgress = rows.find((r) => r.status === 'in-progress');
+  if (inProgress) return inProgress;
+  const recent = rows[0]; // rows are newest-first
+  if (recent?.started && Date.now() - new Date(recent.started).getTime() < 30 * 60 * 1000) {
+    return recent;
   }
   return null;
 }
@@ -46,12 +53,15 @@ function useElapsed(startedAt: string | undefined): string {
 export function LiveView({ calls }: { calls: CallsState }) {
   const { rows, loading, error, refresh } = calls;
   const active = findActiveCall(rows);
+  const live = active?.status === 'in-progress';
   const patientId = active?.patientId ?? null;
 
   // Rules of Hooks: resolve the id first, then ALWAYS call the hooks. A null id
   // yields empty feeds and a harmless (empty-criteria) subscription.
   const names = usePatientNames([patientId, ...rows.map((r) => r.patientId)]);
-  const { chartLines, observations } = useLiveData(patientId);
+  // Scope the live feed to THIS call (charting since it started), so it isn't
+  // buried under the patient's prior-call history / the 50-row fetch cap.
+  const { chartLines, observations } = useLiveData(patientId, active?.started);
   const elapsed = useElapsed(active?.started);
 
   const patientName = (patientId && names[patientId]) || 'Patient';
@@ -122,20 +132,26 @@ export function LiveView({ calls }: { calls: CallsState }) {
         <div className="live-hero-text">
           <div className="live-hero-title">
             <h1>{patientName}</h1>
-            <span className="live-badge">
-              <span className="live-dot" />
-              LIVE
-            </span>
+            {live ? (
+              <span className="live-badge">
+                <span className="live-dot" />
+                LIVE
+              </span>
+            ) : (
+              <Pill tone="gray">Completed</Pill>
+            )}
           </div>
           <p className="live-hero-sub">
-            {condition ? <span className="cap">{condition}</span> : 'Check-in call'} · charting in
-            real time
+            {condition ? <span className="cap">{condition}</span> : 'Check-in call'} ·{' '}
+            {live ? 'charting in real time' : `most recent call · ${formatRelative(active.started)}`}
           </p>
         </div>
-        <div className="live-hero-timer">
-          <ClockIcon size={16} />
-          <span className="mono">{elapsed}</span>
-        </div>
+        {live && (
+          <div className="live-hero-timer">
+            <ClockIcon size={16} />
+            <span className="mono">{elapsed}</span>
+          </div>
+        )}
       </div>
 
       <div className="two-col">

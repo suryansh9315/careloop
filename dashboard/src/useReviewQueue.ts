@@ -65,21 +65,27 @@ export function useReviewQueue(): ReviewQueueState {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    medplum
-      .searchResources('CarePlan', { status: 'draft', _sort: '-_lastUpdated', _count: 50 })
-      .then((results) => {
-        if (cancelled) return;
-        setRows(results.filter((cp) => cp.id).map(toRow));
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return;
-        setError(err instanceof Error ? err.message : String(err));
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+    const load = () =>
+      medplum
+        .searchResources('CarePlan', { status: 'draft', _sort: '-_lastUpdated', _count: 50 })
+        .then((results) => {
+          if (cancelled) return;
+          setRows(results.filter((cp) => cp.id).map(toRow));
+          setError(null);
+        })
+        .catch((err: unknown) => {
+          if (cancelled) return;
+          setError(err instanceof Error ? err.message : String(err));
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false);
+        });
+    void load();
+    // Poll so a plan drafted right after a call shows up without a manual refresh.
+    const timer = window.setInterval(load, 6000);
     return () => {
       cancelled = true;
+      window.clearInterval(timer);
     };
   }, [medplum, nonce]);
 
