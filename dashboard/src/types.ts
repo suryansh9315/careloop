@@ -271,3 +271,36 @@ export type DraftCarePlanRow = {
   /** medication display, if the plan references one */
   med?: string;
 };
+
+/** One row in the cross-patient review queue (worklist). */
+export type ReviewQueueRow = {
+  carePlanId: string;
+  patientId: string | null;
+  treatment: string;
+  medication: string;
+  created: string;
+  hasArtifact: boolean;
+  conditionDisplay?: string;
+  conditionModuleId?: string;
+  conditionCode?: string;
+  scoreTotal?: number;
+  scoreBand?: string;
+  scoreBandLabel?: string;
+  priorScores?: { date: string; total: number }[];
+  peerConsensus?: string;
+  peerAgree?: number;
+  peerTotal?: number;
+  safetyCritical?: number;
+  safetyWarning?: number;
+  riskCritical?: number;
+  researchCount?: number;
+  copayUsd?: number;
+  covered?: boolean;
+  priorAuthRequired?: boolean;
+  medicationCount?: number;
+  patientSummary?: string;
+  /** full detail (not just counts) — powers the plan preview modal */
+  safetyFlags?: SafetyFlag[];
+  /** full detail (not just counts) — powers the plan preview modal */
+  riskFindings?: RiskFinding[];
+};

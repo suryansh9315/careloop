@@ -1,0 +1,214 @@
+/**
+ * Styling for the single-plan review page (dashboard/src/views/ReviewView.tsx).
+ * Split out of styles.css so the review surface can be worked on independently.
+ * Tokens only — see the `:root` block in styles.css and the chart tokens in
+ * charts.css (both loaded before this file).
+ *
+ * New, distinct class names are used throughout (prefixed `rv-`) rather than
+ * redefining selectors already declared in styles.css — this file is imported
+ * ahead of styles.css, so same-specificity redeclarations here would lose the
+ * cascade.
+ */
+
+/* ── Hero band meter ─────────────────────────────────────────────────────── */
+.rv-hero-meter {
+  width: 220px;
+}
+
+@media (max-width: 860px) {
+  .rv-hero-meter {
+    width: 100%;
+  }
+}
+
+/* ── Item-level breakdown ────────────────────────────────────────────────── */
+.rv-item-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.rv-item-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: var(--r);
+  border: 1px solid var(--border-weak);
+  background: var(--surface);
+  cursor: default;
+  transition: border-color 0.15s var(--ease), background 0.15s var(--ease);
+}
+
+.rv-item-row:hover,
+.rv-item-row:focus-visible {
+  border-color: var(--border);
+  background: var(--bg);
+  outline: none;
+}
+
+.rv-item-row.sentinel {
+  border-color: rgba(192, 52, 46, 0.35);
+  background: var(--red-bg);
+}
+
+.rv-item-sentinel-banner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--red-fg);
+  margin-bottom: 2px;
+}
+
+.rv-item-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rv-item-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  flex: 1;
+  min-width: 0;
+}
+
+.rv-item-level {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.rv-item-value {
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.rv-item-track {
+  position: relative;
+  height: 8px;
+  border-radius: var(--r-pill);
+  background: var(--grid);
+  overflow: hidden;
+}
+
+.rv-item-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  height: 100%;
+  border-radius: var(--r-pill);
+  transition: width 0.2s var(--ease);
+}
+
+.rv-item-fill.tone-ok { background: var(--band-good-ink); }
+.rv-item-fill.tone-mild { background: var(--band-warn-ink); }
+.rv-item-fill.tone-concern { background: var(--band-bad-ink); }
+
+.rv-item-marker {
+  position: absolute;
+  top: -2px;
+  width: 2px;
+  height: 12px;
+  background: var(--text);
+  transform: translateX(-1px);
+}
+
+.rv-item-detail {
+  margin-top: 2px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-weak);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.rv-item-prompt {
+  font-size: 12.5px;
+  color: var(--text);
+  line-height: 1.4;
+  margin: 0;
+}
+
+.rv-item-scale {
+  font-size: 11.5px;
+  color: var(--text-subtle);
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rv-item-row,
+  .rv-item-fill {
+    transition: none;
+  }
+}
+
+/* ── Coverage & cost ──────────────────────────────────────────────────────── */
+.rv-coverage {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.rv-coverage-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.rv-coverage-amt {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.1;
+}
+
+.rv-coverage-amt-label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.rv-coverage-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 7px 12px;
+  border-radius: var(--r-pill);
+  background: var(--gray-bg);
+  color: var(--text-muted);
+}
+
+.rv-coverage-status.tone-green {
+  background: var(--green-bg);
+  color: var(--green-fg);
+}
+
+.rv-coverage-status.tone-amber {
+  background: var(--amber-bg);
+  color: var(--amber-fg);
+}
+
+.rv-coverage-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+/* ── Safety / risk emphasis ───────────────────────────────────────────────── */
+.rv-flag-critical {
+  box-shadow: 0 0 0 1px rgba(192, 52, 46, 0.25);
+}
+
+/* ── Consensus (peer review) ──────────────────────────────────────────────── */
+/* `.consensus-summary` layout (flex column, divider) is already defined in
+   styles.css and applies unchanged to the new SeverityBar-based markup — no
+   override needed here. */

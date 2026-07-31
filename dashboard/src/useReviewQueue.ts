@@ -1,23 +1,17 @@
 /**
  * Review queue hook — LIVE only. Lists ALL draft CarePlans across patients
- * (the clinician worklist), resolving each plan's patient name, treatment,
- * medication, and creation date.
+ * and enriches each row with the latest plan artifact (scores, peer review,
+ * safety, coverage) for decision-support visuals on the queue page.
  */
 import { useCallback, useEffect, useState } from 'react';
 import { useMedplum } from '@medplum/react-hooks';
-import type { CarePlan } from '@medplum/fhirtypes';
+import type { CarePlan, Communication } from '@medplum/fhirtypes';
+import { ARTIFACT_CATEGORY } from './medplum';
 import { patientRefId } from './usePatientNames';
+import type { DraftPlan, PatientContext, ReviewQueueRow } from './types';
+import { enrichQueueRow } from './reviewQueueEnrich';
 
-export type ReviewQueueRow = {
-  carePlanId: string;
-  patientId: string | null;
-  /** treatment label from CarePlan.category */
-  treatment: string;
-  /** medication display, if the plan references one */
-  medication: string;
-  /** ISO timestamp (created or lastUpdated), empty if unknown */
-  created: string;
-};
+export type { ReviewQueueRow } from './types';
 
 export type ReviewQueueState = {
   rows: ReviewQueueRow[];
@@ -42,7 +36,7 @@ export function carePlanMedication(cp: CarePlan): string {
   );
 }
 
-function toRow(cp: CarePlan): ReviewQueueRow {
+function toBaseRow(cp: CarePlan): Omit<ReviewQueueRow, 'hasArtifact'> {
   return {
     carePlanId: cp.id ?? '',
     patientId: patientRefId(cp.subject?.reference),
@@ -50,6 +44,16 @@ function toRow(cp: CarePlan): ReviewQueueRow {
     medication: carePlanMedication(cp),
     created: cp.created ?? cp.meta?.lastUpdated ?? '',
   };
+}
+
+function parseArtifactPayload(c: Communication): { patient: PatientContext; plan: DraftPlan } | null {
+  const raw = c.payload?.find((p) => p.contentString)?.contentString;
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as { patient: PatientContext; plan: DraftPlan };
+  } catch {
+    return null;
+  }
 }
 
 export function useReviewQueue(): ReviewQueueState {
@@ -65,24 +69,62 @@ export function useReviewQueue(): ReviewQueueState {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    const load = () =>
-      medplum
-        .searchResources('CarePlan', { status: 'draft', _sort: '-_lastUpdated', _count: 50 }, { cache: 'reload' })
-        .then((results) => {
-          if (cancelled) return;
-          setRows(results.filter((cp) => cp.id).map(toRow));
-          setError(null);
-        })
-        .catch((err: unknown) => {
-          if (cancelled) return;
+    // Polling + `cache: 'reload'` come from main: a plan drafted right after a
+    // call has to appear without a manual refresh. The artifact fetch and
+    // enrichment are what give each row its scores, peer review, safety flags
+    // and coverage — both are needed, so the poll re-runs the enriched load.
+    const load = async () => {
+      try {
+        const [carePlans, artifacts] = await Promise.all([
+          medplum.searchResources(
+            'CarePlan',
+            { status: 'draft', _sort: '-_lastUpdated', _count: 50 },
+            { cache: 'reload' },
+          ),
+          medplum
+            .searchResources(
+              'Communication',
+              {
+                category: ARTIFACT_CATEGORY,
+                _sort: '-sent',
+                _count: 100,
+              },
+              { cache: 'reload' },
+            )
+            .catch(() => [] as Communication[]),
+        ]);
+        if (cancelled) return;
+
+        const artifactByPatient = new Map<string, { patient: PatientContext; plan: DraftPlan }>();
+        for (const comm of artifacts) {
+          const pid = patientRefId(comm.subject?.reference);
+          if (!pid || artifactByPatient.has(pid)) continue;
+          const parsed = parseArtifactPayload(comm);
+          if (parsed) artifactByPatient.set(pid, parsed);
+        }
+
+        const next = carePlans
+          .filter((cp) => cp.id)
+          .map((cp) => {
+            const base = toBaseRow(cp);
+            const artifact = base.patientId ? artifactByPatient.get(base.patientId) ?? null : null;
+            return enrichQueueRow(base, artifact);
+          });
+
+        setRows(next);
+        setError(null);
+      } catch (err: unknown) {
+        if (!cancelled) {
           setError(err instanceof Error ? err.message : String(err));
-        })
-        .finally(() => {
-          if (!cancelled) setLoading(false);
-        });
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
     void load();
-    // Poll so a plan drafted right after a call shows up without a manual refresh.
-    const timer = window.setInterval(load, 6000);
+    const timer = window.setInterval(() => void load(), 6000);
+
     return () => {
       cancelled = true;
       window.clearInterval(timer);

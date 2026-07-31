@@ -12,7 +12,7 @@ import type {
   ProtocolStepDef,
   ScoreBand,
 } from '../types';
-import { PlusIcon } from '../components/icons';
+import { BeakerIcon, ClipboardIcon, ListIcon, PillIcon, PlusIcon, ShieldIcon, SparkIcon, UsersIcon } from '../components/icons';
 import { Button, Card, PageHeader } from '../components/ui';
 import { RxNormSelect } from '../components/RxNormSelect';
 
@@ -75,6 +75,8 @@ export function TreatmentEditor({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [reloadNonce, setReloadNonce] = useState(0);
+  const retryLoad = () => setReloadNonce((n) => n + 1);
 
   useEffect(() => {
     if (isCreate) return;
@@ -97,7 +99,7 @@ export function TreatmentEditor({
     return () => {
       cancelled = true;
     };
-  }, [id, isCreate]);
+  }, [id, isCreate, reloadNonce]);
 
   const validationError = useMemo(
     () => (module ? validate(module) : null),
@@ -110,12 +112,32 @@ export function TreatmentEditor({
     </button>
   );
 
+  if (loadError) {
+    return (
+      <div className="page">
+        {backLink}
+        <PageHeader title="Couldn't load this treatment" />
+        <Card>
+          <div className="wf-tx-load-error">
+            <ShieldIcon size={22} />
+            <div>
+              <p>{loadError}</p>
+              <p className="hint">Check that the bridge is running, then try again.</p>
+            </div>
+            <Button variant="secondary" onClick={retryLoad}>
+              Retry
+            </Button>
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
   if (loading || !module) {
     return (
       <div className="page">
         {backLink}
         <PageHeader title="Loading treatment…" />
-        {loadError && <div className="alert error">{loadError}</div>}
       </div>
     );
   }
@@ -165,8 +187,16 @@ export function TreatmentEditor({
         }
       />
 
+      {/* ── At-a-glance summary — scannable before diving into any section ─── */}
+      <div className="wf-tx-glance">
+        <GlanceStat icon={<ListIcon size={16} />} value={module.instrument.items.length} label="Instrument items" />
+        <GlanceStat icon={<ShieldIcon size={16} />} value={module.instrument.bands.length} label="Score bands" />
+        <GlanceStat icon={<BeakerIcon size={16} />} value={module.moss.corpus.length} label="Corpus docs" />
+        <GlanceStat icon={<UsersIcon size={16} />} value={module.expertPanel.length} label="Expert panel" />
+      </div>
+
       {/* ── Basics ─────────────────────────────────────────────────────────── */}
-      <Card title="Basics">
+      <Card icon={<ClipboardIcon size={18} />} title="Basics">
         <div className="form-grid two">
           <Field label="Id">
             <input
@@ -316,7 +346,12 @@ export function TreatmentEditor({
       </Card>
 
       {/* ── Instrument ─────────────────────────────────────────────────────── */}
-      <Card title="Instrument" subtitle="The questionnaire the voice agent administers.">
+      <Card
+        icon={<ListIcon size={18} />}
+        title="Instrument"
+        subtitle="The questionnaire the voice agent administers."
+        right={<span className="count-chip">{module.instrument.items.length} item{module.instrument.items.length === 1 ? '' : 's'}</span>}
+      >
         <div className="form-grid two">
           <Field label="Name">
             <input
@@ -454,9 +489,12 @@ export function TreatmentEditor({
       </Card>
 
       {/* ── Bands ──────────────────────────────────────────────────────────── */}
+      <div className="wf-tx-linked-group">
       <Card
+        icon={<ShieldIcon size={18} />}
         title="Score bands"
         subtitle="Each band must have a matching protocol step below — they are kept in sync automatically."
+        right={<span className="count-chip">{module.instrument.bands.length} band{module.instrument.bands.length === 1 ? '' : 's'}</span>}
       >
         {module.instrument.bands.map((band, i) => (
           <div key={i} className="tx-band-row">
@@ -511,7 +549,10 @@ export function TreatmentEditor({
       </Card>
 
       {/* ── Protocol (one step per band) ───────────────────────────────────── */}
-      <Card title="Protocol" subtitle="The deterministic care-plan step recommended per band.">
+      <div className="wf-tx-linked-connector" aria-hidden="true">
+        <span>↕ kept in sync with the bands above</span>
+      </div>
+      <Card icon={<PillIcon size={18} />} title="Protocol" subtitle="The deterministic care-plan step recommended per band.">
         {module.instrument.bands.length === 0 && (
           <p className="hint">Add a score band above to define its protocol step.</p>
         )}
@@ -730,9 +771,15 @@ export function TreatmentEditor({
           );
         })}
       </Card>
+      </div>
 
       {/* ── Moss corpus ────────────────────────────────────────────────────── */}
-      <Card title="Knowledge corpus (Moss)" subtitle="Grounding documents for the plan drafter.">
+      <Card
+        icon={<BeakerIcon size={18} />}
+        title="Knowledge corpus (Moss)"
+        subtitle="Grounding documents for the plan drafter."
+        right={<span className="count-chip">{module.moss.corpus.length} doc{module.moss.corpus.length === 1 ? '' : 's'}</span>}
+      >
         <Field label="Index name">
           <input
             className="field-input"
@@ -801,7 +848,7 @@ export function TreatmentEditor({
       </Card>
 
       {/* ── Agent + research ───────────────────────────────────────────────── */}
-      <Card title="Voice agent">
+      <Card icon={<SparkIcon size={18} />} title="Voice agent">
         <Field label="Global prompt">
           <textarea
             className="field-input"
@@ -812,7 +859,7 @@ export function TreatmentEditor({
         </Field>
       </Card>
 
-      <Card title="Research topic template">
+      <Card icon={<ListIcon size={18} />} title="Research topic template">
         <Field label="Template">
           <textarea
             className="field-input"
@@ -828,7 +875,12 @@ export function TreatmentEditor({
       </Card>
 
       {/* ── Expert panel ───────────────────────────────────────────────────── */}
-      <Card title="Expert panel" subtitle="Personas that peer-review each draft plan.">
+      <Card
+        icon={<UsersIcon size={18} />}
+        title="Expert panel"
+        subtitle="Personas that peer-review each draft plan."
+        right={<span className="count-chip">{module.expertPanel.length} expert{module.expertPanel.length === 1 ? '' : 's'}</span>}
+      >
         {module.expertPanel.map((expert, i) => (
           <div key={i} className="tx-row">
             <div className="tx-row-head">
@@ -886,7 +938,7 @@ export function TreatmentEditor({
       </Card>
 
       {/* ── Current medication ─────────────────────────────────────────────── */}
-      <Card title="Current medication" subtitle="Optional baseline medication for this condition.">
+      <Card icon={<PillIcon size={18} />} title="Current medication" subtitle="Optional baseline medication for this condition.">
         <RxNormSelect
           value={{
             rxcui: module.currentMedication?.rxcui ?? '',
@@ -920,6 +972,16 @@ export function TreatmentEditor({
 }
 
 // ── Small helpers ────────────────────────────────────────────────────────────
+
+function GlanceStat({ icon, value, label }: { icon: React.ReactNode; value: number; label: string }) {
+  return (
+    <div className="wf-tx-glance-stat">
+      <span className="wf-tx-glance-icon">{icon}</span>
+      <span className="wf-tx-glance-value">{value}</span>
+      <span className="wf-tx-glance-label">{label}</span>
+    </div>
+  );
+}
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
