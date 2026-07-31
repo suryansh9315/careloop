@@ -67,7 +67,7 @@ export function useReviewQueue(): ReviewQueueState {
     setError(null);
     const load = () =>
       medplum
-        .searchResources('CarePlan', { status: 'draft', _sort: '-_lastUpdated', _count: 50 })
+        .searchResources('CarePlan', { status: 'draft', _sort: '-_lastUpdated', _count: 50 }, { cache: 'reload' })
         .then((results) => {
           if (cancelled) return;
           setRows(results.filter((cp) => cp.id).map(toRow));

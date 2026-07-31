@@ -85,11 +85,11 @@ export function useCalls(): CallsState {
 
     const load = () =>
       medplum
-        .searchResources('Communication', {
-          category: CALL_CATEGORY,
-          _sort: '-sent',
-          _count: 50,
-        })
+        .searchResources(
+          'Communication',
+          { category: CALL_CATEGORY, _sort: '-sent', _count: 50 },
+          { cache: 'reload' }, // fresh each poll so in-progress status changes show live
+        )
         .then((results) => {
           if (cancelled) return;
           setRows(results.map(toRow));

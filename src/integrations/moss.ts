@@ -1,7 +1,18 @@
-import { MossClient as MossSDK } from '@moss-dev/moss';
 import { config } from '../config.js';
 import { log } from '../logger.js';
 import type { MossClient, MossSnippet } from '../types.js';
+
+// Moss ships a native binding. Load it only for live-Moss deployments so the
+// documented mock/fallback mode can run on hosts whose glibc cannot load that
+// optional binary (for example Amazon Linux 2023).
+type MossSDKConstructor = typeof import('@moss-dev/moss').MossClient;
+type MossSDKInstance = InstanceType<MossSDKConstructor>;
+let mossSDKConstructor: MossSDKConstructor | undefined;
+
+async function loadMossSDK(): Promise<MossSDKConstructor> {
+  mossSDKConstructor ??= (await import('@moss-dev/moss')).MossClient;
+  return mossSDKConstructor;
+}
 
 /**
  * Moss = mid-call clinic-knowledge grounding (RAG). Used by the `getCareContext`
@@ -161,7 +172,7 @@ class MockMossClient implements MossClient {
  * call never fails on retrieval. Index it first with `npm run moss:index`.
  */
 class LiveMossClient implements MossClient {
-  private readonly sdk = new MossSDK(config.moss.projectId, config.moss.projectKey);
+  private sdk?: MossSDKInstance;
   private loaded = false;
 
   constructor(
@@ -169,6 +180,14 @@ class LiveMossClient implements MossClient {
     /** used for the fallback path when live retrieval fails or is empty */
     private readonly corpus?: MossCorpusEntry[],
   ) {}
+
+  private async getSDK(): Promise<MossSDKInstance> {
+    if (!this.sdk) {
+      const MossSDK = await loadMossSDK();
+      this.sdk = new MossSDK(config.moss.projectId, config.moss.projectKey);
+    }
+    return this.sdk;
+  }
 
   private fallback(query: string, k: number): MossSnippet[] {
     return this.corpus && this.corpus.length > 0
@@ -179,11 +198,12 @@ class LiveMossClient implements MossClient {
   async retrieve(query: string, opts?: { k?: number }): Promise<MossSnippet[]> {
     const k = opts?.k ?? 3;
     try {
+      const sdk = await this.getSDK();
       if (!this.loaded) {
-        await this.sdk.loadIndex(this.indexName);
+        await sdk.loadIndex(this.indexName);
         this.loaded = true;
       }
-      const results = (await this.sdk.query(this.indexName, query, { topK: k })) as {
+      const results = (await sdk.query(this.indexName, query, { topK: k })) as {
         docs?: Array<{ id?: string; text?: string; score?: number }>;
         timeTakenInMs?: number;
       };

@@ -15,7 +15,8 @@
     "reset": "tsx scripts/reset-demo.ts",
     "seed:conditions": "tsx scripts/seed-conditions.ts",
     "typecheck": "tsc --noEmit",
-    "build": "tsc -p tsconfig.json"
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/src/bridge/server.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",

@@ -94,11 +94,11 @@ export function useLiveData(patientId: string | null, since?: string): LiveData 
       // absent on some rows and let undated history saturate the _count window,
       // pushing the just-written live rows out of the result set.
       medplum
-        .searchResources('Communication', {
-          subject: `Patient/${patientId}`,
-          _sort: '-_lastUpdated',
-          _count: 50,
-        })
+        .searchResources(
+          'Communication',
+          { subject: `Patient/${patientId}`, _sort: '-_lastUpdated', _count: 50 },
+          { cache: 'reload' }, // bypass the client cache so each poll sees new rows live
+        )
         .then((results) => {
           if (cancelled) return;
           const mapped = results
@@ -115,11 +115,11 @@ export function useLiveData(patientId: string | null, since?: string): LiveData 
       // 2. Coded preliminary Observations. Sort by _lastUpdated (see above) so the
       // live-charted observations always surface, regardless of effectiveDateTime.
       medplum
-        .searchResources('Observation', {
-          subject: `Patient/${patientId}`,
-          _sort: '-_lastUpdated',
-          _count: 50,
-        })
+        .searchResources(
+          'Observation',
+          { subject: `Patient/${patientId}`, _sort: '-_lastUpdated', _count: 50 },
+          { cache: 'reload' }, // bypass the client cache so each poll sees new rows live
+        )
         .then((results) => {
           if (cancelled) return;
           const mapped = results.map(observationToRow).filter((m) => !since || m.at >= since);

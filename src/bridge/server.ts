@@ -402,7 +402,7 @@ wss.on('connection', (twilioWs: WebSocket) => {
     agent = connectDeepgramAgent({
       systemPrompt,
       functions,
-      greeting: `Hi ${patient.givenName}, this is Maya from the clinic.`,
+      greeting: `Hi ${patient.givenName}, this is Maya, a care coordinator with your clinic. I'm calling ahead of your upcoming appointment to see how you've been doing — is now an okay time for a quick check-in?`,
       callbacks: {
         onReady: () => log.info('deepgram.ready', { callSid }),
         onAudio: (mulaw) => {

@@ -129,9 +129,13 @@ function parse271(json: Stedi271, input: CheckInput): CoverageResult {
   const benefits = json.benefitsInformation ?? [];
   const covered = benefits.some((b) => b.code === '1') || planActive(json);
 
+  // Copay comes from the 271 itself: a benefit with code 'B' (co-payment) carries
+  // the dollar amount the plan reported. If the payer returns none, fall back to a
+  // deterministic name-based estimate so the card still shows a figure.
   const copayBenefit = benefits.find((b) => b.code === 'B' && b.benefitAmount);
   const copayParsed = copayBenefit ? Math.round(Number(copayBenefit.benefitAmount)) : NaN;
-  const copayUsd = Number.isFinite(copayParsed) ? copayParsed : mockCoverage(input).copayUsd;
+  const copayFromPlan = Number.isFinite(copayParsed);
+  const copayUsd = copayFromPlan ? copayParsed : mockCoverage(input).copayUsd;
 
   // Eligibility (270/271) does not carry per-drug formulary PA, so combine any
   // payer auth indicator with our step-up heuristic for the ICS-formoterol MART.
@@ -146,10 +150,13 @@ function parse271(json: Stedi271, input: CheckInput): CoverageResult {
     benefits.find((b) => b.benefitsAdditionalInformation?.planDescription)
       ?.benefitsAdditionalInformation?.planDescription ?? `${payerName} (test)`;
 
+  const copayText = copayFromPlan
+    ? `plan copay ~$${copayUsd} (USD, from the eligibility response)`
+    : `estimated patient copay ~$${copayUsd} (USD)`;
   const notes =
     `Real-time eligibility via Stedi (270/271): coverage ${covered ? 'active' : 'not confirmed'}. ` +
     `${priorAuthRequired ? 'Prior authorization likely required for this step-up combination inhaler; ' : 'No prior-auth flagged; '}` +
-    `estimated patient copay ~$${copayUsd}. The care team can attach the ACT trend as PA justification.`;
+    `${copayText}. The care team can attach the ACT trend as PA justification.`;
 
   return { covered, priorAuthRequired, copayUsd, planName, notes };
 }
