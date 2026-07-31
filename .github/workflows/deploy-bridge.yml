@@ -37,7 +37,7 @@ jobs:
           command_id=$(aws ssm send-command \
             --document-name AWS-RunShellScript \
             --targets 'Key=tag:Name,Values=careloop-bridge' \
-            --parameters 'commands=["cd /opt/careloop && git pull --ff-only origin main && npm ci && npm run build && systemctl restart careloop-bridge"]' \
+            --parameters 'commands=["runuser -u careloop -- git -C /opt/careloop pull --ff-only origin main","runuser -u careloop -- npm --prefix /opt/careloop ci","runuser -u careloop -- npm --prefix /opt/careloop run build","systemctl restart careloop-bridge"]' \
             --query Command.CommandId \
             --output text)
 

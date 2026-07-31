@@ -30,9 +30,9 @@ data "aws_subnets" "default" {
   }
 }
 
-# Latest Amazon Linux 2023 (x86_64) via the public SSM parameter.
-data "aws_ssm_parameter" "al2023" {
-  name = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
+# Latest Ubuntu 24.04 LTS (x86_64) via Canonical's public SSM parameter.
+data "aws_ssm_parameter" "ubuntu2404" {
+  name = "/aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id"
 }
 
 # ── Security group: only 80 + 443 open (shell access is via SSM, no SSH) ──────
@@ -120,7 +120,7 @@ resource "aws_iam_instance_profile" "bridge" {
 
 # ── The instance ──────────────────────────────────────────────────────────────
 resource "aws_instance" "bridge" {
-  ami                         = data.aws_ssm_parameter.al2023.value
+  ami                         = data.aws_ssm_parameter.ubuntu2404.value
   instance_type               = var.instance_type
   subnet_id                   = data.aws_subnets.default.ids[0]
   vpc_security_group_ids      = [aws_security_group.bridge.id]

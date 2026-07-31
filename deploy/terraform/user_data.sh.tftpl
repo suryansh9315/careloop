@@ -1,14 +1,22 @@
 #!/bin/bash
-# CareLoop voice bridge — first-boot bootstrap (Amazon Linux 2023).
+# CareLoop voice bridge — first-boot bootstrap (Ubuntu 24.04 LTS).
 # Terraform template variables use the $${name} form; shell variables use $VAR.
 set -euxo pipefail
 
-dnf update -y
-dnf install -y git tar gzip
+export DEBIAN_FRONTEND=noninteractive
+apt-get update
+apt-get install -y ca-certificates curl git tar gzip unzip
+
+# AWS CLI v2 (Ubuntu's apt repositories do not ship the CLI package).
+if ! command -v aws >/dev/null 2>&1; then
+  curl -fsSL https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip -o /tmp/awscliv2.zip
+  unzip -q /tmp/awscliv2.zip -d /tmp
+  /tmp/aws/install
+fi
 
 # Node 20 (NodeSource)
-curl -fsSL https://rpm.nodesource.com/setup_20.x | bash -
-dnf install -y nodejs
+curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+apt-get install -y nodejs
 
 # Caddy static binary (arch-aware) — handles auto-TLS + WebSocket proxy.
 ARCH=$(uname -m)

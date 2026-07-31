@@ -252,7 +252,7 @@ security group, IAM resources, and SSM parameter managed by this stack.
   before it can complete HTTP-01 certificate issuance.
 - The dashboard is not created by this Terraform stack; build and host it
   separately on S3/CloudFront or another static host.
-- The Moss SDK uses an optional native binding. The bridge lazy-loads it and
-  falls back to the built-in corpus if the host cannot load the binding. Live
-  Moss on Amazon Linux may require moving the workload to an image with glibc
-  2.38 or newer.
+- The bridge runs on Ubuntu 24.04 LTS because the Moss SDK's native binding
+  requires glibc 2.38 or newer. Terraform resolves the current Canonical AMI
+  through its public SSM parameter, keeping replacement instances compatible
+  with live Moss.
