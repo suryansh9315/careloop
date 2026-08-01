@@ -9,15 +9,18 @@
  * Medplum project (Google, Okta, Azure AD, …) works automatically, because the
  * hosted page owns that decision rather than us.
  *
- * Required configuration:
+ * Required configuration is just the server and the client id:
  *   VITE_MEDPLUM_BASE_URL   Medplum server, e.g. https://api.medplum.com/
  *   VITE_MEDPLUM_CLIENT_ID  ClientApplication id (public — no secret in a browser)
- *   VITE_MEDPLUM_REDIRECT_URI  optional; defaults to this app's origin + "/"
  *
- * The redirect URI must be registered on the Medplum ClientApplication and match
- * **byte for byte**, trailing slash included — OAuth2 compares it exactly. The
- * SDK's own default is `protocol//host/`, so we default to the same thing and
- * make it explicit rather than implicit.
+ * The redirect URI is NOT configurable, deliberately: it is always this app's
+ * own origin, which is the only value that can possibly be correct — the
+ * browser has to come back to where it started. It still has to be registered
+ * on the Medplum ClientApplication and match byte for byte (trailing slash
+ * included), because OAuth2 requires the server to know where it is allowed to
+ * send a user back. That is a protocol guarantee, not a setting we can skip:
+ * without it, anyone could point this client id at their own domain and
+ * intercept the authorization code.
  */
 import { MedplumClient } from '@medplum/core';
 
@@ -29,9 +32,12 @@ export const MEDPLUM_PROJECT_ID = env.VITE_MEDPLUM_PROJECT_ID ?? '';
 /** Patient to load (empty until VITE_PATIENT_ID is configured). */
 export const LIVE_PATIENT_ID = env.VITE_PATIENT_ID ?? '';
 
-/** Where Medplum sends the browser back after sign-in. Must be registered. */
-export const MEDPLUM_REDIRECT_URI =
-  env.VITE_MEDPLUM_REDIRECT_URI ?? `${window.location.origin}/`;
+/**
+ * Where Medplum sends the browser back after sign-in — always this app's own
+ * origin. Matches the SDK's own default (`protocol//host/`); kept as a named
+ * export so the sign-in screen can show operators the exact string to register.
+ */
+export const MEDPLUM_REDIRECT_URI = `${window.location.origin}/`;
 
 /** Category token identifying the backend-published dashboard plan artifact. */
 export const ARTIFACT_CATEGORY = 'https://careloop.demo|careloop-dashboard';
