@@ -21,7 +21,15 @@ function toneBg(tone: SeverityBarSegment['tone']): string {
     case 'red':
       return 'var(--band-bad-ink)';
     default:
-      return 'var(--gray-fg)';
+      /*
+       * The neutral tone marks the benign category ("routine" — nothing wrong),
+       * which is usually the majority of the bar. At --gray-fg it carried the
+       * same visual weight as the severity colours, so a queue that was 67%
+       * routine drew the eye to the one segment that needs no attention. A
+       * recessive step keeps severity dominant regardless of the mix; the
+       * legend still labels it, so nothing is encoded by colour alone.
+       */
+      return 'var(--text-subtle)';
   }
 }
 

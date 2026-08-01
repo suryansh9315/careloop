@@ -20,7 +20,8 @@ export type Page =
   | 'patients'
   | 'intake'
   | 'treatments'
-  | 'review';
+  | 'review'
+  | 'call';
 
 const NAV: {
   id: Page;
@@ -48,9 +49,10 @@ export function Sidebar({
   userLabel?: string;
   userEmail?: string;
 }) {
-  // The Review panel is a detail view reached from the queue; keep the queue
-  // item highlighted while a plan is open in review.
-  const activeId: Page = page === 'review' ? 'review-queue' : page;
+  // The Review panel is a detail view reached from the queue, and Call detail
+  // is a detail view reached from Calls — keep the originating nav item
+  // highlighted while either detail route is open.
+  const activeId: Page = page === 'review' ? 'review-queue' : page === 'call' ? 'calls' : page;
 
   return (
     <aside className="sidebar">

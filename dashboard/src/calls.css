@@ -1,0 +1,55 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Calls — call log row affordance + Call detail (read-only past-call view)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* The row is a mouse-convenience click target only (no interactive role on
+   <tr> itself — see CallsView.tsx). Trailing-cell controls stop propagation
+   so they don't double-fire the row handler. */
+.calls-row {
+  cursor: pointer;
+  transition: background var(--ease, ease) 0.12s;
+}
+.calls-row:hover {
+  background: var(--bg);
+}
+
+/* The real, keyboard-reachable open affordance: a plain-reset button wrapping
+   the patient cell, so screen readers get one unambiguous interactive
+   element per row rather than a <tr role="button"> containing more buttons. */
+.calls-row-open {
+  all: unset;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  cursor: pointer;
+  border-radius: var(--r-sm, 8px);
+}
+.calls-row-open:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.call-detail-back {
+  margin-bottom: 4px;
+}
+
+.call-detail-hero {
+  align-items: center;
+}
+
+.call-detail-plan-link {
+  margin: -8px 0 16px;
+}
+
+/*
+ * A live call's feed is capped and scrolls because it grows unbounded while the
+ * call runs, and the two Live columns need to stay aligned. A finished call is
+ * the opposite: the transcript is short, fixed, and the entire reason for the
+ * page — capping it buries lines behind a nested scrollbar on a page that has
+ * room to spare. Two classes so this beats the single-class `.feed` rule in
+ * styles.css, which is loaded after this file.
+ */
+.call-detail-feed.feed {
+  max-height: none;
+  overflow-y: visible;
+}

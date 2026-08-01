@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { formatDuration, type CallsState, type CallStatus } from '../useCalls';
+import { formatDuration, type CallRow, type CallsState, type CallStatus } from '../useCalls';
 import type { ReviewQueueState } from '../useReviewQueue';
 import { usePatientNames } from '../usePatientNames';
 import { MEDPLUM_APP_URL } from '../links';
@@ -17,7 +17,8 @@ import {
 import { Button, Card, EmptyState, PageHeader, Pill, PersonCell, StatCard, Table, type Tone } from '../components/ui';
 import { formatRelative } from './format';
 
-const STATUS_TONE: Record<CallStatus, Tone> = {
+// Exported so CallDetailView's header can render the same status treatment.
+export const STATUS_TONE: Record<CallStatus, Tone> = {
   completed: 'green',
   'in-progress': 'blue',
   initiated: 'blue',
@@ -25,7 +26,7 @@ const STATUS_TONE: Record<CallStatus, Tone> = {
   'no-answer': 'gray',
 };
 
-const STATUS_ICON: Record<CallStatus, (p: { size?: number }) => JSX.Element> = {
+export const STATUS_ICON: Record<CallStatus, (p: { size?: number }) => JSX.Element> = {
   completed: CheckCircleIcon,
   'in-progress': PulseIcon,
   initiated: ClockIcon,
@@ -33,7 +34,7 @@ const STATUS_ICON: Record<CallStatus, (p: { size?: number }) => JSX.Element> = {
   'no-answer': ClockIcon,
 };
 
-const STATUS_LABEL: Record<CallStatus, string> = {
+export const STATUS_LABEL: Record<CallStatus, string> = {
   completed: 'Completed',
   'in-progress': 'In progress',
   initiated: 'Dialing',
@@ -49,10 +50,12 @@ export function CallsView({
   calls,
   queue,
   onOpenReview,
+  onOpenCall,
 }: {
   calls: CallsState;
   queue: ReviewQueueState;
   onOpenReview: (carePlanId: string) => void;
+  onOpenCall: (call: CallRow) => void;
 }) {
   const { rows, loading, error, refresh } = calls;
   const names = usePatientNames(rows.map((r) => r.patientId));
@@ -140,9 +143,15 @@ export function CallsView({
                   const name = (r.patientId && names[r.patientId]) || 'Unknown';
                   const StatusIcon = r.status ? STATUS_ICON[r.status] : null;
                   return (
-                    <tr key={r.id}>
+                    // The row itself carries no interactive role — it only adds an
+                    // onClick as a mouse convenience. The actual keyboard/AT-reachable
+                    // affordance is the patient button below; trailing-cell controls
+                    // stop propagation so they don't also fire the row's onOpenCall.
+                    <tr key={r.id} className="calls-row" onClick={() => onOpenCall(r)}>
                       <td>
-                        <PersonCell name={name} fallback="Unknown" />
+                        <button type="button" className="calls-row-open" aria-label={`Open call with ${name}`}>
+                          <PersonCell name={name} fallback="Unknown" />
+                        </button>
                       </td>
                       <td>
                         {r.treatment && r.treatment !== '—' ? (
@@ -179,7 +188,13 @@ export function CallsView({
                       <td className="mono">{formatDuration(r.durationSeconds)}</td>
                       <td className="right">
                         {planId ? (
-                          <button className="btn-link" onClick={() => onOpenReview(planId)}>
+                          <button
+                            className="btn-link"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onOpenReview(planId);
+                            }}
+                          >
                             Open review
                           </button>
                         ) : r.patientId ? (
@@ -188,6 +203,7 @@ export function CallsView({
                             href={`${MEDPLUM_APP_URL}/Patient/${r.patientId}`}
                             target="_blank"
                             rel="noreferrer"
+                            onClick={(e) => e.stopPropagation()}
                           >
                             <ExternalIcon size={14} />
                             Medplum
