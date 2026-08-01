@@ -4,6 +4,7 @@ import { useReviewData } from './useReviewData';
 import { useReviewQueue } from './useReviewQueue';
 import { useCalls } from './useCalls';
 import { usePatientList } from './usePatientList';
+import { usePatientNames } from './usePatientNames';
 import { Sidebar, type Page } from './components/Sidebar';
 import { Login } from './components/Login';
 import { DashboardHome } from './views/DashboardHome';
@@ -12,6 +13,7 @@ import { IntakeView } from './views/IntakeView';
 import { ReviewView } from './views/ReviewView';
 import { ReviewQueueView } from './views/ReviewQueueView';
 import { CallsView } from './views/CallsView';
+import { CallDetailView } from './views/CallDetailView';
 import { PatientsView } from './views/PatientsView';
 import { TreatmentsView } from './views/TreatmentsView';
 
@@ -32,6 +34,8 @@ function Shell({ userLabel, userEmail }: { userLabel?: string; userEmail?: strin
   const [page, setPage] = useState<Page>('dashboard');
   // The worklist opens a specific CarePlan into the Review panel.
   const [openCarePlanId, setOpenCarePlanId] = useState<string | null>(null);
+  // The Calls log opens a specific call into the read-only Call detail panel.
+  const [openCallId, setOpenCallId] = useState<string | null>(null);
 
   const queue = useReviewQueue();
   const calls = useCalls();
@@ -42,6 +46,21 @@ function Shell({ userLabel, userEmail }: { userLabel?: string; userEmail?: strin
     setOpenCarePlanId(carePlanId);
     setPage('review');
   };
+
+  const openCall = (call: { id: string }) => {
+    setOpenCallId(call.id);
+    setPage('call');
+  };
+
+  const openCallRow = page === 'call' ? calls.rows.find((r) => r.id === openCallId) ?? null : null;
+  // Resolve just this one patient's name (cached — cheap alongside the other
+  // usePatientNames calls elsewhere in the tree).
+  const openCallNames = usePatientNames([openCallRow?.patientId]);
+  const openCallPatientName = openCallRow?.patientId ? openCallNames[openCallRow.patientId] : undefined;
+  // The call detail page links through to the patient's newest draft plan, if any.
+  const openCallCarePlanId = openCallRow?.patientId
+    ? queue.rows.find((q) => q.patientId === openCallRow.patientId)?.carePlanId
+    : undefined;
 
   return (
     <div className="app-layout">
@@ -61,7 +80,17 @@ function Shell({ userLabel, userEmail }: { userLabel?: string; userEmail?: strin
           <ReviewQueueView queue={queue} onOpenReview={openReview} />
         )}
         {page === 'calls' && (
-          <CallsView calls={calls} queue={queue} onOpenReview={openReview} />
+          <CallsView calls={calls} queue={queue} onOpenReview={openReview} onOpenCall={openCall} />
+        )}
+        {page === 'call' && (
+          <CallDetailView
+            call={openCallRow}
+            patientName={openCallPatientName}
+            calls={calls.rows}
+            carePlanId={openCallCarePlanId}
+            onBack={() => setPage('calls')}
+            onOpenReview={openReview}
+          />
         )}
         {page === 'patients' && <PatientsView patients={patientList} />}
         {page === 'intake' && <IntakeView onCreated={patientList.refresh} />}

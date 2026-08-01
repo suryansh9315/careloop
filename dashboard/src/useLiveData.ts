@@ -8,6 +8,17 @@
  * the bridge writes them during the call. Mirrors useReviewData's
  * searchResources + useSubscription pattern, keyed on the patient id and
  * guarding the Rules of Hooks (hooks always run; a null id yields empty state).
+ *
+ * `since`/`until` bound the window to a single call. `since` alone (the Live
+ * view's usage) is open-ended — fine for an in-progress call, since there is
+ * nothing after it yet. A finished call needs BOTH bounds: without `until`,
+ * anything charted after the call ends (including a later call's own
+ * transcript) leaks into the window. When `until` is set the data is treated
+ * as historical/static — polling and the live subscriptions are skipped so a
+ * closed call doesn't keep hitting the network for updates that can't arrive.
+  *
+ * `until` is EXCLUSIVE: it is normally the next call's start time, and a line
+ * charted at exactly that instant belongs to the next call, not this one.
  */
 import { useEffect, useRef, useState } from 'react';
 import { useMedplum, useSubscription } from '@medplum/react-hooks';
@@ -67,15 +78,17 @@ function observationToRow(o: Observation): LiveObservation {
   };
 }
 
-export function useLiveData(patientId: string | null, since?: string): LiveData {
+export function useLiveData(patientId: string | null, since?: string, until?: string): LiveData {
   const medplum = useMedplum();
   const [lines, setLines] = useState<ChartLine[]>([]);
   const [observations, setObservations] = useState<LiveObservation[]>([]);
   const seenComm = useRef(new Set<string>());
   const seenObs = useRef(new Set<string>());
 
-  const commCriteria = patientId ? `Communication?subject=Patient/${patientId}` : '';
-  const obsCriteria = patientId ? `Observation?subject=Patient/${patientId}` : '';
+  // A bounded (historical) query is static — nothing new can arrive for it,
+  // so don't subscribe for live updates.
+  const commCriteria = patientId && !until ? `Communication?subject=Patient/${patientId}` : '';
+  const obsCriteria = patientId && !until ? `Observation?subject=Patient/${patientId}` : '';
 
   useEffect(() => {
     // Reset per-patient state whenever the active call's patient changes.
@@ -104,7 +117,8 @@ export function useLiveData(patientId: string | null, since?: string): LiveData 
           const mapped = results
             .filter((c) => !isFeedNoise(c))
             .map(communicationToChartLine)
-            .filter((m) => !since || m.at >= since);
+            .filter((m) => !since || m.at >= since)
+            .filter((m) => !until || m.at < until);
           mapped.forEach((m) => seenComm.current.add(m.id));
           setLines(mapped);
         })
@@ -122,7 +136,10 @@ export function useLiveData(patientId: string | null, since?: string): LiveData 
         )
         .then((results) => {
           if (cancelled) return;
-          const mapped = results.map(observationToRow).filter((m) => !since || m.at >= since);
+          const mapped = results
+            .map(observationToRow)
+            .filter((m) => !since || m.at >= since)
+            .filter((m) => !until || m.at < until);
           mapped.forEach((m) => seenObs.current.add(m.id));
           setObservations(mapped);
         })
@@ -132,22 +149,31 @@ export function useLiveData(patientId: string | null, since?: string): LiveData 
     };
 
     void load();
-    // Poll fast during the call so charted rows appear near-real-time even when
-    // Medplum WebSocket subscriptions aren't enabled (useSubscription is a bonus).
+    // A bounded (historical) window is static — load once and stop. Otherwise
+    // poll fast during the call so charted rows appear near-real-time even
+    // when Medplum WebSocket subscriptions aren't enabled (useSubscription is
+    // a bonus).
+    if (until) {
+      return () => {
+        cancelled = true;
+      };
+    }
     const timer = window.setInterval(load, 2000);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [medplum, patientId, since]);
+  }, [medplum, patientId, since, until]);
 
   // Live subscriptions — prepend new resources as they arrive (dedupe by id).
+  // No-op when `until` is set: commCriteria/obsCriteria are '' in that case.
   useSubscription(commCriteria, (bundle) => {
     const entry = bundle.entry?.find((e) => e.resource?.resourceType === 'Communication');
     const resource = entry?.resource as Communication | undefined;
     if (!resource?.id || seenComm.current.has(resource.id) || isFeedNoise(resource)) return;
     const line = communicationToChartLine(resource);
     if (since && line.at < since) return;
+    if (until && line.at >= until) return;
     seenComm.current.add(resource.id);
     setLines((prev) => [line, ...prev]);
   });
@@ -158,6 +184,7 @@ export function useLiveData(patientId: string | null, since?: string): LiveData 
     if (!resource?.id || seenObs.current.has(resource.id)) return;
     const row = observationToRow(resource);
     if (since && row.at < since) return;
+    if (until && row.at >= until) return;
     seenObs.current.add(resource.id);
     setObservations((prev) => [row, ...prev]);
   });
