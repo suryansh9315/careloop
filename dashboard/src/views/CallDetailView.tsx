@@ -61,14 +61,25 @@ function callWindow(call: CallRow, calls: CallRow[]): { since: string; until: st
       if (nextStartMs === null || otherMs < nextStartMs) nextStartMs = otherMs;
     }
   }
-  if (nextStartMs !== null) {
-    return { since, until: new Date(nextStartMs).toISOString() };
-  }
+  /*
+   * Take the TIGHTEST of the two bounds rather than preferring one.
+   *
+   * The next call's start is a hard ceiling — never cross into another call —
+   * but on real data it is far too loose on its own: check-ins run seconds to a
+   * couple of minutes, while the gap to the next call is often tens of minutes,
+   * so anything charted in between would be swept into this call's transcript.
+   * The call's own duration is the precise bound whenever it is recorded, and
+   * the buffer only has to absorb clock skew plus the closing summary write —
+   * a couple of minutes, not fifteen.
+   */
+  const BUFFER_MS = 2 * 60 * 1000;
+  const bounds: number[] = [];
+  if (nextStartMs !== null) bounds.push(nextStartMs);
   if (!Number.isNaN(startMs) && typeof call.durationSeconds === 'number') {
-    const BUFFER_MS = 15 * 60 * 1000; // charting/summary can land a few minutes after hangup
-    return { since, until: new Date(startMs + call.durationSeconds * 1000 + BUFFER_MS).toISOString() };
+    bounds.push(startMs + call.durationSeconds * 1000 + BUFFER_MS);
   }
-  return { since, until: undefined };
+  if (bounds.length === 0) return { since, until: undefined };
+  return { since, until: new Date(Math.min(...bounds)).toISOString() };
 }
 
 /** Best-effort match of a coded Observation's LOINC label back to an item. */
