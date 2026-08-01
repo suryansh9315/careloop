@@ -1,46 +1,44 @@
-import { useState } from 'react';
-import {
-  MEDPLUM_BASE_URL,
-  MEDPLUM_CLIENT_ID,
-  MEDPLUM_REDIRECT_URI,
-  SSO_CONFIGURED,
-  signInWithMedplum,
-} from '../medplum';
+import { useId, useState } from 'react';
+import { AUTH_CONFIGURED, MEDPLUM_BASE_URL, signInWithMedplum } from '../medplum';
 import { PulseIcon, ShieldIcon } from './icons';
 import { Button } from './ui';
 
 /**
- * Sign-in screen for Medplum SSO.
- *
- * There is no credential form here by design: CareLoop hands authentication to
- * Medplum's hosted page and never handles the user's password. The button only
- * starts the redirect — everything after that happens on Medplum's domain.
- *
- * The redirect is deliberately user-initiated rather than automatic on load.
- * Auto-redirecting would make a failed callback impossible to read (it would
- * bounce straight back out) and would fight sign-out, which lands here.
+ * Sign-in screen — Medplum email + password, exchanged through Medplum's login
+ * API. Nothing is stored here: the password lives in component state only until
+ * the request resolves, and the resulting session is held by the Medplum client.
  */
-export function SignIn({ error }: { error?: string | null }) {
-  const [busy, setBusy] = useState(false);
-  const [localError, setLocalError] = useState<string | null>(null);
+export function SignIn() {
+  const emailId = useId();
+  const passwordId = useId();
+  const errorId = useId();
 
-  const onSignIn = async () => {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
     setBusy(true);
-    setLocalError(null);
+    setError(null);
     try {
-      // On success this navigates away and never resolves.
-      await signInWithMedplum();
+      await signInWithMedplum(email, password);
+      // On success the reactive profile flips and App renders the dashboard.
     } catch (err) {
-      setLocalError(
-        err instanceof Error ? err.message : 'Could not reach Medplum to start sign-in.',
+      // Medplum's own message is more useful than anything we'd invent here
+      // (it distinguishes bad credentials from a locked or missing account).
+      setError(
+        err instanceof Error && err.message
+          ? err.message
+          : 'Sign in failed. Check your email and password.',
       );
+      setPassword('');
+    } finally {
       setBusy(false);
     }
   };
 
-  const shown = error ?? localError;
-  // Show the host rather than the full URL — it is the part that tells an
-  // operator whether they are pointed at the right Medplum server.
   const serverHost = (() => {
     try {
       return new URL(MEDPLUM_BASE_URL).host;
@@ -49,78 +47,94 @@ export function SignIn({ error }: { error?: string | null }) {
     }
   })();
 
+  if (!AUTH_CONFIGURED) {
+    return (
+      <div className="login-shell">
+        <div className="login-card">
+          <Brand />
+          <h1 className="login-title">Not configured</h1>
+          <div className="alert error" role="alert">
+            Set <code>VITE_MEDPLUM_CLIENT_ID</code> in <code>dashboard/.env</code> to a
+            Medplum ClientApplication id, then reload.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="login-shell">
-      <div className="login-card">
-        <div className="login-brand">
-          <span className="logo-mark">
-            <PulseIcon size={19} />
-          </span>
-          <span className="login-word">CareLoop</span>
-        </div>
+      <form className="login-card" onSubmit={onSubmit} noValidate>
+        <Brand />
         <h1 className="login-title">Sign in</h1>
-        <p className="login-sub">
-          CareLoop uses your organisation&rsquo;s Medplum account. You&rsquo;ll be taken to
-          Medplum to sign in, then brought straight back.
+        <p className="login-sub">Use your Medplum account to access the clinic dashboard.</p>
+
+        <label className="field" htmlFor={emailId}>
+          <span className="field-label">Email</span>
+        </label>
+        <input
+          id={emailId}
+          className="field-input"
+          type="email"
+          autoComplete="username"
+          value={email}
+          required
+          disabled={busy}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? errorId : undefined}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="you@clinic.com"
+        />
+
+        <label className="field" htmlFor={passwordId}>
+          <span className="field-label">Password</span>
+        </label>
+        <input
+          id={passwordId}
+          className="field-input"
+          type="password"
+          autoComplete="current-password"
+          value={password}
+          required
+          disabled={busy}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? errorId : undefined}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="••••••••"
+        />
+
+        {error && (
+          <div className="alert error" id={errorId} role="alert">
+            {error}
+          </div>
+        )}
+
+        <Button
+          variant="primary"
+          size="lg"
+          full
+          type="submit"
+          disabled={busy || !email || !password}
+        >
+          {busy ? 'Signing in…' : 'Sign in'}
+        </Button>
+
+        <p className="login-help">
+          <ShieldIcon size={13} /> Authenticated against {serverHost}. Your session stays
+          on this device.
         </p>
+      </form>
+    </div>
+  );
+}
 
-        {shown && (
-          <div className="alert error" role="alert">
-            {shown}
-          </div>
-        )}
-
-        {SSO_CONFIGURED ? (
-          <>
-            <Button variant="primary" size="lg" full onClick={onSignIn} disabled={busy}>
-              {busy ? 'Redirecting to Medplum…' : 'Continue with Medplum'}
-            </Button>
-            <p className="login-help">
-              <ShieldIcon size={13} /> Your password is entered on {serverHost}, never in
-              CareLoop.
-            </p>
-
-            {/*
-             * "Invalid redirect URI" is rejected by Medplum *before* it redirects
-             * back, so the app never gets a callback it could explain. The only
-             * thing that helps is showing the exact values the server is
-             * comparing against, so whoever hits it can copy them straight into
-             * the ClientApplication instead of guessing.
-             */}
-            <details className="signin-diag">
-              <summary>Trouble signing in?</summary>
-              <p>
-                If Medplum answers <strong>&ldquo;Invalid redirect URI&rdquo;</strong>, this
-                exact value must be saved on the ClientApplication&rsquo;s{' '}
-                <code>Redirect URI</code> field — it is compared byte for byte, trailing
-                slash included:
-              </p>
-              <p className="signin-diag-value">
-                <code>{MEDPLUM_REDIRECT_URI}</code>
-              </p>
-              <dl className="signin-diag-list">
-                <dt>Server</dt>
-                <dd>
-                  <code>{MEDPLUM_BASE_URL}</code>
-                </dd>
-                <dt>Client ID</dt>
-                <dd>
-                  <code>{MEDPLUM_CLIENT_ID}</code>
-                </dd>
-              </dl>
-              <p className="hint">
-                Medplum stores a single redirect URI per client, so local and deployed
-                environments each need their own ClientApplication.
-              </p>
-            </details>
-          </>
-        ) : (
-          <div className="alert error" role="alert">
-            Single sign-on is not configured. Set <code>VITE_MEDPLUM_CLIENT_ID</code> to a
-            Medplum ClientApplication id and register this app&rsquo;s redirect URI on it.
-          </div>
-        )}
-      </div>
+function Brand() {
+  return (
+    <div className="login-brand">
+      <span className="logo-mark">
+        <PulseIcon size={19} />
+      </span>
+      <span className="login-word">CareLoop</span>
     </div>
   );
 }

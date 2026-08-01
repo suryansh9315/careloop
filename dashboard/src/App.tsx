@@ -1,11 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { useMedplumProfile } from '@medplum/react-hooks';
-import {
-  callbackError,
-  clearAuthParams,
-  completeSignIn,
-  pendingAuthCode,
-} from './medplum';
 import { useReviewData } from './useReviewData';
 import { useReviewQueue } from './useReviewQueue';
 import { useCalls } from './useCalls';
@@ -23,60 +17,14 @@ import { TreatmentsView } from './views/TreatmentsView';
 
 export function App() {
   const profile = useMedplumProfile();
-  const [authError, setAuthError] = useState<string | null>(null);
-  // Seed from the URL so the very first paint of a callback load is the
-  // "completing sign-in" state, not a flash of the sign-in button.
-  const [exchanging, setExchanging] = useState(() => pendingAuthCode() !== null);
-  // An authorization code is single-use, and StrictMode invokes effects twice in
-  // dev. Without this guard the second run would redeem a spent code and report
-  // a failure over a sign-in that actually succeeded.
-  const exchangeStarted = useRef(false);
 
-  useEffect(() => {
-    const failure = callbackError();
-    if (failure) {
-      setAuthError(failure);
-      clearAuthParams();
-      setExchanging(false);
-      return;
-    }
-
-    const code = pendingAuthCode();
-    if (!code || exchangeStarted.current) return;
-    exchangeStarted.current = true;
-
-    completeSignIn(code)
-      .catch((err: unknown) => {
-        setAuthError(
-          err instanceof Error ? err.message : 'Sign-in could not be completed.',
-        );
-      })
-      .finally(() => setExchanging(false));
-  }, []);
-
-  if (exchanging) {
-    return <AuthLoading />;
-  }
-
-  // LIVE-only: always require a Medplum SSO session.
+  // LIVE-only: always require a Medplum session.
   if (!profile) {
-    return <SignIn error={authError} />;
+    return <SignIn />;
   }
 
   return (
     <Shell userLabel={profileLabel(profile)} userEmail={profileEmail(profile)} />
-  );
-}
-
-/** Shown while the authorization code is exchanged for tokens. */
-function AuthLoading() {
-  return (
-    <div className="login-shell">
-      <div className="login-card">
-        <h1 className="login-title">Signing you in…</h1>
-        <p className="login-sub">Completing sign-in with Medplum.</p>
-      </div>
-    </div>
   );
 }
 
