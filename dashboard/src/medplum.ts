@@ -1,27 +1,28 @@
 /**
  * Medplum client wiring for the dashboard.
  *
- * The dashboard is LIVE-ONLY and authenticates against Medplum's own login API
- * (`auth/login` → `oauth2/token`) using PKCE, driven entirely by the values
- * already in `.env`:
+ * The dashboard is LIVE-ONLY and authenticates via **Medplum SSO** — the
+ * OAuth2 authorization code flow with PKCE. The user is redirected to Medplum's
+ * hosted sign-in page, authenticates there, and comes back with a short-lived
+ * authorization code that the client exchanges for tokens. CareLoop never sees
+ * the user's password, and any external identity provider configured on the
+ * Medplum project (Google, Okta, Azure AD, …) works automatically, because the
+ * hosted page owns that decision rather than us.
  *
- *   VITE_MEDPLUM_BASE_URL    Medplum server, e.g. https://api.medplum.com/
- *   VITE_MEDPLUM_CLIENT_ID   ClientApplication id (public — never a secret)
- *   VITE_MEDPLUM_PROJECT_ID  scopes the login to one project
+ * Required configuration is just the server and the client id:
+ *   VITE_MEDPLUM_BASE_URL   Medplum server, e.g. https://api.medplum.com/
+ *   VITE_MEDPLUM_CLIENT_ID  ClientApplication id (public — no secret in a browser)
  *
- * No client secret ever reaches the browser, and no server-side configuration
- * is required — codes minted by `auth/login` are exchanged directly, so this
- * works against a ClientApplication with no registered redirect URI.
- *
- * Trade-off worth knowing: because the credential is collected here rather than
- * on Medplum's hosted page, CareLoop is briefly in the path of the user's
- * password, and identity providers configured on the project (Google, Okta,
- * Azure AD) are not reachable through this screen. Switching to the hosted
- * redirect flow removes both limitations and needs exactly one change on the
- * server — a Redirect URI on the ClientApplication — and nothing here.
+ * The redirect URI is NOT configurable, deliberately: it is always this app's
+ * own origin, which is the only value that can possibly be correct — the
+ * browser has to come back to where it started. It still has to be registered
+ * on the Medplum ClientApplication and match byte for byte (trailing slash
+ * included), because OAuth2 requires the server to know where it is allowed to
+ * send a user back. That is a protocol guarantee, not a setting we can skip:
+ * without it, anyone could point this client id at their own domain and
+ * intercept the authorization code.
  */
 import { MedplumClient } from '@medplum/core';
-import type { LoginAuthenticationResponse, ProfileResource } from '@medplum/core';
 
 const env = import.meta.env;
 
@@ -31,6 +32,13 @@ export const MEDPLUM_PROJECT_ID = env.VITE_MEDPLUM_PROJECT_ID ?? '';
 /** Patient to load (empty until VITE_PATIENT_ID is configured). */
 export const LIVE_PATIENT_ID = env.VITE_PATIENT_ID ?? '';
 
+/**
+ * Where Medplum sends the browser back after sign-in — always this app's own
+ * origin. Matches the SDK's own default (`protocol//host/`); kept as a named
+ * export so the sign-in screen can show operators the exact string to register.
+ */
+export const MEDPLUM_REDIRECT_URI = `${window.location.origin}/`;
+
 /** Category token identifying the backend-published dashboard plan artifact. */
 export const ARTIFACT_CATEGORY = 'https://careloop.demo|careloop-dashboard';
 
@@ -38,15 +46,17 @@ export const ARTIFACT_CATEGORY = 'https://careloop.demo|careloop-dashboard';
 export const CALL_CATEGORY = 'https://careloop.demo|careloop-call';
 
 /**
- * True when there is enough configuration to attempt a sign-in. Without a
- * client id Medplum answers with an opaque error, so the sign-in screen checks
- * this first and says what is missing instead.
+ * True when the app has enough configuration to start an SSO handshake. Without
+ * a client id the redirect would bounce off Medplum with an opaque error, so the
+ * sign-in screen checks this first and explains what is missing instead.
  */
-export const AUTH_CONFIGURED = Boolean(MEDPLUM_CLIENT_ID);
+export const SSO_CONFIGURED = Boolean(MEDPLUM_CLIENT_ID);
 
 export const medplum = new MedplumClient({
   baseUrl: MEDPLUM_BASE_URL,
   clientId: MEDPLUM_CLIENT_ID || undefined,
+  // NB: the redirect URI is not a client-level option in @medplum/core — it is
+  // carried on each login request, so it is passed in `signInWithMedplum()`.
   cacheTime: 60_000,
   // A token that expired or was revoked server-side would otherwise surface as
   // a wall of failed requests. Dropping the local session flips the reactive
@@ -64,73 +74,92 @@ export function isSignedIn(): boolean {
 }
 
 /**
- * Sign in with a Medplum email + password through Medplum's login API.
+ * Start Medplum SSO by redirecting to the hosted sign-in page.
  *
- * `startLogin` posts to `auth/login` with a PKCE challenge and returns one of
- * three things, all of which are handled here rather than assumed away:
- *   - `code`        — the happy path; exchange it for tokens.
- *   - `memberships` — the account belongs to more than one project and Medplum
- *                     needs to know which. With a single membership we pick it
- *                     automatically; with several we say so, because silently
- *                     choosing one would sign the user into the wrong project.
- *   - `mfaRequired` — multi-factor is enabled, which this screen cannot collect.
- *
- * The previous implementation only looked at `code` and threw a generic error
- * for everything else, which surfaced an MFA-enabled or multi-project account
- * as "Login did not return an authorization code."
+ * `signInWithRedirect()` is dual-purpose in the SDK: with no `code` in the URL
+ * it performs the redirect (and never returns), and with a `code` present it
+ * exchanges it. We only ever call it for the first case — the callback is
+ * handled explicitly by `completeSignIn` so we control error reporting and URL
+ * cleanup rather than leaving a spent code in the address bar.
  */
-export async function signInWithMedplum(
-  email: string,
-  password: string,
-): Promise<ProfileResource> {
-  const result = await medplum.startLogin({
-    email,
-    password,
+export async function signInWithMedplum(): Promise<void> {
+  await medplum.signInWithRedirect({
     clientId: MEDPLUM_CLIENT_ID || undefined,
     projectId: MEDPLUM_PROJECT_ID || undefined,
+    redirectUri: MEDPLUM_REDIRECT_URI,
     scope: 'openid profile',
   });
-  return medplum.processCode(await resolveAuthCode(result));
 }
 
-/** Drive a login response to an authorization code, or explain why it can't. */
-async function resolveAuthCode(result: LoginAuthenticationResponse): Promise<string> {
-  if (result.code) return result.code;
+/** The authorization code Medplum handed back, if this is a callback load. */
+export function pendingAuthCode(): string | null {
+  return new URLSearchParams(window.location.search).get('code');
+}
 
-  if (result.mfaRequired) {
-    throw new Error(
-      'This account has multi-factor authentication enabled, which CareLoop cannot ' +
-        'collect. Ask an administrator to disable MFA for it, or sign in through Medplum.',
-    );
-  }
+/**
+ * An error Medplum reported on the callback (e.g. `access_denied` when the user
+ * cancels). Returned as a readable sentence, or null when there is no error.
+ */
+export function callbackError(): string | null {
+  const params = new URLSearchParams(window.location.search);
+  const error = params.get('error');
+  if (!error) return null;
+  return params.get('error_description') ?? error.replace(/_/g, ' ');
+}
 
-  const memberships = result.memberships ?? [];
-  if (memberships.length === 1) {
-    // Medplum returns the code once a project membership is chosen.
-    const chosen = await medplum.post('auth/profile', {
-      login: result.login,
-      profile: memberships[0].id,
-    });
-    const code = (chosen as { code?: string }).code;
-    if (code) return code;
+/**
+ * Strip the OAuth handshake params from the address bar.
+ *
+ * An authorization code is single-use. Leaving `?code=…` in the URL means a
+ * refresh (or anything that re-reads the query string) retries a spent code and
+ * fails, so we clear it as soon as the exchange resolves — success or failure.
+ * `replaceState` keeps it out of history, so Back doesn't resurrect it either.
+ */
+export function clearAuthParams(): void {
+  const url = new URL(window.location.href);
+  let touched = false;
+  for (const key of ['code', 'state', 'error', 'error_description']) {
+    if (url.searchParams.has(key)) {
+      url.searchParams.delete(key);
+      touched = true;
+    }
   }
-  if (memberships.length > 1) {
-    throw new Error(
-      `This account belongs to ${memberships.length} Medplum projects. Set ` +
-        'VITE_MEDPLUM_PROJECT_ID to the one CareLoop should use.',
-    );
-  }
+  if (!touched) return;
+  const search = url.searchParams.toString();
+  window.history.replaceState(
+    {},
+    '',
+    `${url.pathname}${search ? `?${search}` : ''}${url.hash}`,
+  );
+}
 
-  throw new Error('Medplum accepted the sign-in but returned no authorization code.');
+/**
+ * Finish the SSO handshake by exchanging the authorization code for tokens.
+ * Always clears the handshake params, so a failed attempt leaves a clean URL
+ * the user can retry from.
+ */
+export async function completeSignIn(code: string): Promise<void> {
+  try {
+    await medplum.processCode(code);
+  } finally {
+    clearAuthParams();
+  }
 }
 
 /**
  * End the session.
  *
- * Revokes the token server-side and clears it locally. There is no hosted
- * session to tear down in this flow — the credential was collected here — so a
- * logout redirect would only bounce the user through Medplum for no effect.
+ * Local revocation runs first and is awaited, so the CareLoop session is gone
+ * even if the redirect that follows never completes. Then we hand off to
+ * Medplum's logout endpoint to end the SSO session itself — without that step
+ * the identity provider still considers the user signed in, and the next
+ * "Sign in" silently logs them straight back in, which does not read as a
+ * sign-out to anyone.
  */
 export async function signOut(): Promise<void> {
-  await medplum.signOut();
+  try {
+    await medplum.signOut();
+  } finally {
+    medplum.signOutWithRedirect();
+  }
 }
